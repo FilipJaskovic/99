@@ -187,4 +187,23 @@ describe("Mark", function()
       vim.api.nvim_buf_get_extmark_by_id(mark.buffer, mark.nsid, mark.id, {})
     eq(0, #deleted_pos)
   end)
+  it(
+    "tolerates repeated cleanup and status updates after a buffer wipe",
+    function()
+      local scratch = vim.api.nvim_create_buf(false, true)
+      local mark = Mark.mark_point(scratch, Point:from_1_based(1, 1))
+      vim.api.nvim_buf_delete(scratch, { force = true })
+      assert.is_false(mark:is_valid())
+      mark:delete()
+      mark:delete()
+      mark:set_virtual_text({ "status" })
+    end
+  )
+
+  it("does not recreate a deleted mark during a status update", function()
+    local mark = Mark.mark_point(buffer, Point:from_1_based(1, 1))
+    mark:delete()
+    mark:set_virtual_text({ "status" })
+    assert.is_false(mark:is_valid())
+  end)
 end)

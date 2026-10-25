@@ -22,7 +22,6 @@ local function nvim_list_uis()
 end
 
 describe("in_flight window", function()
-  local WAIT_TIME = 10
   before_each(function()
     vim.api.nvim_list_uis = nvim_list_uis
   end)
@@ -35,22 +34,26 @@ describe("in_flight window", function()
     local context = Prompt.search(state)
 
     context:start_request()
-    vim.wait(WAIT_TIME * 2, function() end)
-
-    eq(1, #Window.active_windows)
+    assert.is_true(vim.wait(1000, function()
+      return #Window.active_windows == 1
+    end, 5))
 
     local win = Window.active_windows[1]
     vim.api.nvim_win_close(win.win_id, true)
 
-    vim.wait(WAIT_TIME * 2, function() end)
+    assert.is_true(vim.wait(1000, function()
+      local replacement = Window.active_windows[1]
+      return replacement ~= nil and replacement.win_id ~= win.win_id
+    end, 5))
     local next_win = Window.active_windows[1]
 
     eq(true, win.win_id ~= next_win.win_id)
 
     provider:resolve("success", "results are in")
 
-    vim.wait(WAIT_TIME * 2, function() end)
-    eq(0, #Window.active_windows)
+    assert.is_true(vim.wait(1000, function()
+      return #Window.active_windows == 0
+    end, 5))
   end)
 
   it("enable false == do not show in flight", function()
@@ -61,11 +64,11 @@ describe("in_flight window", function()
     local context = Prompt.search(state)
 
     context:start_request()
-    vim.wait(WAIT_TIME * 2, function() end)
+    test_utils.next_frame()
 
     eq(0, #Window.active_windows)
     provider:resolve("success", "results are in")
-    vim.wait(WAIT_TIME * 2, function() end)
+    test_utils.next_frame()
     eq(0, #Window.active_windows)
   end)
 end)

@@ -36,8 +36,10 @@ local function vibe(context, opts)
   local logger = context.logger:set_area("vibe")
   logger:debug("vibe", "with opts", opts.additional_prompt)
 
+  local provider = context.provider or context._99.provider_override
+  local response_mode = provider and provider.response_mode
   local prompt, refs =
-    make_prompt(context, context._99.prompts.prompts.vibe(), opts)
+    make_prompt(context, context._99.prompts.prompts.vibe(response_mode), opts)
 
   context:add_prompt_content(prompt)
   context:add_references(refs)

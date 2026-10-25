@@ -3,7 +3,6 @@ local _99 = require("99")
 local Window = require("99.window")
 local Logger = require("99.logger.logger")
 local test_utils = require("99.test.test_utils")
-local QFixHelpers = require("99.ops.qfix-helpers")
 local eq = assert.are.same
 
 local function some_window_has(str)
@@ -42,10 +41,24 @@ describe("open", function()
   local previous_capture_select_input
   local previous_display_full_screen_message
   local previous_logs_by_id
+  local tmp_dir
+  local search_file
+  local vibe_file
 
   before_each(function()
+    tmp_dir = vim.fn.tempname()
+    vim.fn.mkdir(tmp_dir, "p")
+    tmp_dir = vim.uv.fs_realpath(tmp_dir)
+    search_file = vim.fs.joinpath(tmp_dir, "foo.lua")
+    vibe_file = vim.fs.joinpath(tmp_dir, "bar.lua")
+    vim.fn.writefile({ "local foo = true" }, search_file)
+    vim.fn.writefile({ "local bar = true", "return bar" }, vibe_file)
+
     provider = test_utils.TestProvider.new()
-    _99.setup(test_utils.get_test_setup_options({}, provider))
+    _99.setup(test_utils.get_test_setup_options({
+      tmp_dir = tmp_dir,
+      in_flight_options = { enable = false },
+    }, provider))
 
     previous_capture_select_input = Window.capture_select_input
     previous_display_full_screen_message = Window.display_full_screen_message
@@ -56,10 +69,13 @@ describe("open", function()
     Window.capture_select_input = previous_capture_select_input
     Window.display_full_screen_message = previous_display_full_screen_message
     Logger.logs_by_id = previous_logs_by_id
+    Window.clear_active_popups()
+    vim.cmd("silent! cclose")
+    vim.fn.delete(tmp_dir, "rf")
   end)
 
   --- @param term "search" | "tutorial" | "vibe"
-  ---@param result_str any
+  ---@param result_str string
   local function op(term, result_str)
     _99[term]({ additional_prompt = result_str })
     local out = result_str
@@ -69,11 +85,11 @@ describe("open", function()
   end
 
   local function search()
-    return op("search", "/tmp/foo.lua:1:1,search note")
+    return op("search", search_file .. ":1:1,1,search note")
   end
 
   local function vibe()
-    return op("vibe", "/tmp/bar.lua:2:2,search bar note")
+    return op("vibe", vibe_file .. ":2:2,1,vibe note")
   end
 
   local function tutorial()
@@ -86,9 +102,9 @@ describe("open", function()
     end
   end
 
-  it("selects a previous search and passes edited output to vibe", function()
-    local s = search()
-    local v = vibe()
+  it("reopens saved tutorial, vibe, and search results", function()
+    search()
+    vibe()
     local t = tutorial()
 
     select_content(1)
@@ -97,11 +113,15 @@ describe("open", function()
 
     select_content(2)
     _99.open()
-    eq(QFixHelpers.create_qfix_entries(v), qfix_items())
+    eq({
+      { filename = vibe_file, col = 2, lnum = 2, text = "vibe note" },
+    }, qfix_items())
 
     select_content(3)
     _99.open()
-    eq(QFixHelpers.create_qfix_entries(s), qfix_items())
+    eq({
+      { filename = search_file, col = 1, lnum = 1, text = "search note" },
+    }, qfix_items())
   end)
 
   it("views logs for selected request xid", function()

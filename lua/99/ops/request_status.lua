@@ -33,6 +33,8 @@ end
 --- @field lines string[]
 --- @field max_lines number
 --- @field running boolean
+--- @field generation number
+--- @field timer uv.uv_timer_t?
 --- @field mark? _99.Mark
 --- @field callback? fun(status: string[]): nil
 local RequestStatus = {}
@@ -50,6 +52,7 @@ function RequestStatus.new(update_time, max_lines, title_line, mark_or_fn)
   self.status_line = StatusLine.new(title_line)
   self.lines = {}
   self.running = false
+  self.generation = 0
   if type(mark_or_fn) == "function" then
     self.callback = mark_or_fn
   else
@@ -76,11 +79,22 @@ function RequestStatus:push(line)
 end
 
 function RequestStatus:start()
+  if self.running then
+    return
+  end
+  self.running = true
+  self.generation = self.generation + 1
+  local generation = self.generation
   local function update_spinner()
-    if not self.running then
+    if not self.running or self.generation ~= generation then
       return
     end
+    self.timer = nil
 
+    if self.mark and not self.mark:is_valid() then
+      self:stop()
+      return
+    end
     self.status_line:update()
     if self.mark then
       self.mark:set_virtual_text(self:get())
@@ -88,15 +102,24 @@ function RequestStatus:start()
     if self.callback then
       self.callback(self:get())
     end
-    vim.defer_fn(update_spinner, self.update_time)
+    if self.running and self.generation == generation then
+      self.timer = vim.defer_fn(update_spinner, self.update_time)
+    end
   end
 
-  self.running = true
-  vim.defer_fn(update_spinner, self.update_time)
+  self.timer = vim.defer_fn(update_spinner, self.update_time)
 end
 
 function RequestStatus:stop()
   self.running = false
+  self.generation = self.generation + 1
+  if self.timer then
+    if not self.timer:is_closing() then
+      self.timer:stop()
+      self.timer:close()
+    end
+    self.timer = nil
+  end
 end
 
 return RequestStatus

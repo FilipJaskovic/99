@@ -7,7 +7,6 @@ local CleanUp = require("99.ops.clean-up")
 local make_clean_up = CleanUp.make_clean_up
 local make_observer = CleanUp.make_observer
 
-local Range = geo.Range
 local Point = geo.Point
 
 --- @param context _99.Prompt
@@ -15,11 +14,45 @@ local Point = geo.Point
 local function over_range(context, opts)
   opts = opts or {}
   local logger = context.logger:set_area("visual")
+  if context:is_cancelled() then
+    context:stop()
+    return
+  end
 
+  local function reject(reason, response)
+    context.state = "failed"
+    context.unapplied_response = type(response) == "string" and response or nil
+    local recovery = ""
+    if type(response) == "string" and response ~= "" then
+      local excerpt = vim.fn.strcharpart(response, 0, 2048)
+      logger:error(
+        "visual response not applied",
+        "response",
+        excerpt,
+        "truncated",
+        #excerpt < #response
+      )
+      recovery =
+        ". Use require('99').view_logs() to retrieve the unapplied response"
+    end
+    error("visual replacement aborted: " .. reason .. recovery, 0)
+  end
+
+  local snapshot = Mark.capture_visual(context)
+  local range, capture_error = snapshot:live_range()
+  if not range then
+    context.state = "failed"
+    context:stop()
+    vim.notify(
+      "99: visual replacement aborted: " .. capture_error,
+      vim.log.levels.WARN
+    )
+    return
+  end
   local data = context:visual_data()
-  local range = data.range
+  data.range = range
   local top_mark = Mark.mark_above_range(range)
-  local bottom_mark = Mark.mark_point(range.buffer, range.end_)
+  local bottom_mark = snapshot.end_mark
   context.marks.top_mark = top_mark
   context.marks.bottom_mark = bottom_mark
 
@@ -64,31 +97,31 @@ local function over_range(context, opts)
           response or "no response provided"
         )
       elseif status == "success" then
-        local valid = top_mark:is_valid() and bottom_mark:is_valid()
-        if not valid then
-          logger:fatal(
-            -- luacheck: ignore 631
-            "the original visual_selection has been destroyed.  You cannot delete the original visual selection during a request"
+        if context:is_cancelled() then
+          return
+        end
+        if type(response) ~= "string" or vim.trim(response) == "" then
+          reject("the response is empty or is not text", response)
+          return
+        end
+        local new_range, conflict = snapshot:live_range()
+        if not new_range then
+          reject(conflict, response)
+          return
+        end
+        -- Linewise replacement supplies its own line separator. Characterwise
+        -- replacement must preserve every newline in the response.
+        local replacement = new_range.linewise and response:gsub("\n$", "")
+          or response
+        local lines = vim.split(replacement, "\n", { plain = true })
+        local ok, apply_error = pcall(new_range.replace_text, new_range, lines)
+        if not ok then
+          reject(
+            "unable to apply response: " .. tostring(apply_error),
+            response
           )
           return
         end
-
-        if vim.trim(response) == "" then
-          print("response was empty, visual replacement aborted")
-          logger:debug("response was empty, visual replacement aborted")
-          return
-        end
-
-        local new_range = Range.from_marks(top_mark, bottom_mark)
-        local lines = vim.split(response, "\n")
-
-        --- HACK: i am adding a new line here because above range will add a mark to the line above.
-        --- that way this appears to be added to "the same line" as the visual selection was
-        --- originally take from
-        table.insert(lines, 1, "")
-
-        new_range:replace_text(lines)
-        context._99:sync()
       end
     end,
     on_stdout = function(line)

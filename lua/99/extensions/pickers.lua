@@ -9,11 +9,30 @@ local function is_selectable_provider(provider)
 end
 
 --- @param provider _99.Providers.BaseProvider?
---- @param callback fun(models: string[], current: string): nil
+--- @param callback fun(models: string[], current: string, provider: _99.Providers.BaseProvider): nil
 function M.get_models(provider, callback)
   provider = provider or _99.get_provider()
+  if provider ~= _99.get_provider() then
+    vim.notify(
+      "99: Select the provider before choosing its model",
+      vim.log.levels.WARN
+    )
+    return
+  end
+  local current = _99.get_model()
+
+  if type(provider.fetch_models) ~= "function" then
+    vim.notify(
+      "99: This provider does not support listing models",
+      vim.log.levels.WARN
+    )
+    return
+  end
 
   provider.fetch_models(function(models, err)
+    if provider ~= _99.get_provider() then
+      return
+    end
     if err then
       vim.notify("99: " .. err, vim.log.levels.ERROR)
       return
@@ -22,7 +41,7 @@ function M.get_models(provider, callback)
       vim.notify("99: No models available", vim.log.levels.WARN)
       return
     end
-    callback(models, _99.get_model())
+    callback(models, current, provider)
   end)
 end
 
@@ -54,7 +73,15 @@ function M.get_providers()
 end
 
 --- @param model string
-function M.on_model_selected(model)
+--- @param provider _99.Providers.BaseProvider
+function M.on_model_selected(model, provider)
+  if provider ~= _99.get_provider() then
+    vim.notify(
+      "99: Provider changed; reopen the model picker",
+      vim.log.levels.WARN
+    )
+    return
+  end
   _99.set_model(model)
   vim.notify("99: Model set to " .. model)
 end

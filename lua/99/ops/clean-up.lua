@@ -7,10 +7,10 @@ local M = {}
 --- @field on_stderr? fun(line: string): nil
 --- @field on_start? fun(): nil
 
---- @param context _99.Prompt
+--- @param _context _99.Prompt
 --- @param obs_or_fn _99.Providers.PartialObserver | _99.Providers.on_complete
 --- @return _99.Providers.Observer
-M.make_observer = function(context, obs_or_fn)
+M.make_observer = function(_context, obs_or_fn)
   --- @type _99.Providers.PartialObserver
   local obs = type(obs_or_fn) == "table" and obs_or_fn
     or {
@@ -23,11 +23,7 @@ M.make_observer = function(context, obs_or_fn)
       end
     end,
     on_complete = function(status, res)
-      pcall(obs.on_complete, status, res)
-      vim.schedule(function()
-        context:stop()
-        context._99:sync()
-      end)
+      obs.on_complete(status, res)
     end,
     on_stderr = function(line)
       if obs.on_stderr then

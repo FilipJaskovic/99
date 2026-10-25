@@ -30,7 +30,7 @@ function M.select_model(provider)
   local actions = require("telescope.actions")
   local action_state = require("telescope.actions.state")
 
-  pickers_util.get_models(provider, function(models, current)
+  pickers_util.get_models(provider, function(models, current, selected_provider)
     pickers
       .new({}, {
         prompt_title = "99: Select Model (current: " .. current .. ")",
@@ -44,7 +44,7 @@ function M.select_model(provider)
             if not selection then
               return
             end
-            pickers_util.on_model_selected(selection[1])
+            pickers_util.on_model_selected(selection[1], selected_provider)
           end)
           return true
         end,

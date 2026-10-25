@@ -60,14 +60,35 @@ async function main(): Promise<void> {
   }
 
   if (checkMode) {
-    const existing = await readFileIfExists(readmePath);
-    if (existing !== markdown) {
-      console.error("[docs] README.md is out of date. Run: ./gen-docs");
+    const header = await fs.readFile(
+      path.join(repoRoot, "README_HEADER.md"),
+      "utf8",
+    );
+    if (!header.includes("___DOCS___")) {
+      throw new Error("README_HEADER.md is missing ___DOCS___");
+    }
+    const combined = header.split("___DOCS___").join(markdown.trimEnd());
+    const readme = combined.endsWith("\n") ? combined : `${combined}\n`;
+    const expected = [
+      [readmePath, markdown],
+      [path.join(repoRoot, "README.md"), readme],
+    ] as const;
+    const stale: string[] = [];
+    for (const [file, content] of expected) {
+      if ((await readFileIfExists(file)) !== content) {
+        stale.push(path.relative(repoRoot, file));
+      }
+    }
+    if (stale.length > 0) {
+      console.error(`[docs] Out of date: ${stale.join(", ")}`);
+      console.error(
+        "Run: node --experimental-strip-types docs/src/generate.ts && ./gen-docs",
+      );
       process.exitCode = 1;
       return;
     }
 
-    console.log("[docs] README.md is up to date");
+    console.log("[docs] Both README files are up to date");
     return;
   }
 

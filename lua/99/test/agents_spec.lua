@@ -133,7 +133,7 @@ describe("rules: <name>/SKILL.md", function()
     eq(true, Agents.is_rule(rules, "back-end"))
     eq(true, Agents.is_rule(rules, "foo"))
     eq(true, Agents.is_rule(rules, "front-end"))
-    eq(true, Agents.is_rule(rules, "vim"))
+    eq(false, Agents.is_rule(rules, "vim")) -- Duplicate bare names are ambiguous.
 
     -- Test invalid
     eq(false, Agents.is_rule(rules, "nonexistent"))

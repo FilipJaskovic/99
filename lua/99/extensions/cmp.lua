@@ -1,6 +1,6 @@
-local Agents = require("99.extensions.agents")
-local Files = require("99.extensions.files")
 local Completions = require("99.extensions.completions")
+-- Import while the extension router's protected require can report a missing dependency.
+local cmp = require("cmp")
 local SOURCE = "99"
 
 --- @class CmpSource
@@ -34,15 +34,7 @@ end
 function CmpSource.complete(_, params, callback)
   local before = params.context.cursor_before_line or ""
 
-  -- Find which trigger is active
-  local trigger = nil
-  for _, char in ipairs(Completions.get_trigger_characters()) do
-    local pattern = Completions.escape_pattern(char) .. "%S*$"
-    if before:match(pattern) then
-      trigger = char
-      break
-    end
-  end
+  local trigger = Completions.find_active_reference(before)
 
   if not trigger then
     callback({ items = {}, isIncomplete = false })
@@ -71,7 +63,6 @@ local function init_for_buffer(_)
   -- Set filetype for syntax highlighting
   vim.bo[buf].filetype = "99prompt"
 
-  local cmp = require("cmp")
   cmp.setup.buffer({
     sources = { { name = SOURCE } },
     window = {
@@ -82,39 +73,13 @@ local function init_for_buffer(_)
 end
 
 --- @param _99 _99.State
-local function register_providers(_99)
-  Completions.register(Agents.completion_provider(_99))
-  Completions.register(Files.completion_provider())
-end
-
---- @param _99 _99.State
 local function init(_99)
-  assert(
-    source == nil,
-    "the source must be nil when calling init on an completer"
-  )
-
-  -- Collect rule directories to exclude from file search
-  local rule_dirs = {}
-  if _99.completion then
-    if _99.completion.custom_rules then
-      for _, dir in ipairs(_99.completion.custom_rules) do
-        table.insert(rule_dirs, dir)
-      end
-    end
-  end
-
-  if _99.completion and _99.completion.files then
-    Files.setup(_99.completion.files, rule_dirs)
+  if source then
+    source._99 = _99
   else
-    Files.setup({ enabled = true }, rule_dirs)
+    source = CmpSource.new(_99)
+    cmp.register_source(SOURCE, source)
   end
-
-  register_providers(_99)
-
-  local cmp = require("cmp")
-  source = CmpSource.new(_99)
-  cmp.register_source(SOURCE, source)
 end
 
 --- @param _99 _99.State
@@ -122,7 +87,7 @@ local function refresh_state(_99)
   if not source then
     return
   end
-  register_providers(_99)
+  source._99 = _99
 end
 
 --- @type _99.Extensions.Source

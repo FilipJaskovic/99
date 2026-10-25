@@ -15,11 +15,11 @@ return function(context, prompt, opts)
   local full_prompt = prompt
   full_prompt = context._99.prompts.prompts.prompt(user_prompt, full_prompt)
 
-  local refs = Completions.parse(user_prompt)
+  local refs = Completions.parse(user_prompt, context.cwd, context.rules)
   local additional_rules = opts.additional_rules
   if additional_rules then
     for _, r in ipairs(additional_rules) do
-      local content = Agents.get_rule_content(r)
+      local content = Agents.get_rule_content(r, context.cwd)
       if content then
         table.insert(refs, {
           content = content,

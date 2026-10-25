@@ -1,146 +1,45 @@
-# 99
-The AI client that Neovim deserves, built by those that still enjoy to code.
+# 99, Filip's fork
 
-## IF YOU ARE HERE FROM [THE YT VIDEO](https://www.youtube.com/watch?v=ws9zR-UzwTE)
-So many things have changed.  So please be careful!
+A personal fork of [ThePrimeagen/99](https://github.com/ThePrimeagen/99) with Codex as the default provider and fixes for request handling, visual edits, and context discovery.
 
-## WARNING :: API CHANGES RIGHT NOW
-It will happen that apis will disapear or be changed.  Sorry, this is an BETA product.
+Requires Neovim 0.11.5 or newer and the Codex CLI. Run `codex login` once, then use the setup below. An existing Codex ChatGPT login works. No separate API key or SDK is required. The integration was developed against Codex CLI 0.164.0.
 
-## Project Direction
-This repo is meant to be my exploration grounds for using AI mixed with tradcoding.
-
-I believe that hand coding is still very important and the best products i know
-of today still do that (see opencode vs claude code)
-
-## Warning
-1. Prompts are temporary right now. they could be massively improved
-2. Officially in beta, but api can still change.  unlikely at this point
+See the [Codex integration decision](docs/codex-integration-research.md) and [audit record](docs/audit/README.md) for evidence and limits. This fork is experimental. Review generated edits before saving or committing them.
 
 # 99
 The AI Neovim experience
 
 ## _99
-99 is an agentic workflow that is meant to meld the current programmers ability
-with the amazing powers of LLMs.  Instead of being a replacement, its meant to
-augment the programmer.
+This fork uses Codex for visual replacements, project searches, tutorials,
+and workspace edits. It requires Neovim 0.11.5 or newer and a signed-in
+Codex CLI. The integration was developed against Codex CLI 0.164.0.
 
-As of now, the direction of 99 is to progress into agentic programming and surfacing
-of information.  In the beginning and the original youtube video was about replacing
-specific pieces of code.  The more i use 99 the more i realize the better use is
-through `search` and `work`
-
-### Basic Setup
+### Basic setup
 ```lua
-	{
-		"ThePrimeagen/99",
-		config = function()
-			local _99 = require("99")
-
-            -- For logging that is to a file if you wish to trace through requests
-            -- for reporting bugs, i would not rely on this, but instead the provided
-            -- logging mechanisms within 99.  This is for more debugging purposes
-            local cwd = vim.uv.cwd()
-            local basename = vim.fs.basename(cwd)
-			_99.setup({
-                -- provider = _99.Providers.ClaudeCodeProvider,  -- default: OpenCodeProvider
-				logger = {
-					level = _99.DEBUG,
-					path = "/tmp/" .. basename .. ".99.debug",
-					print_on_error = true,
-				},
-                -- When setting this to something that is not inside the CWD tools
-                -- such as claude code or opencode will have permission issues
-                -- and generation will fail refer to tool documentation to resolve
-                -- https://opencode.ai/docs/permissions/#external-directories
-                -- https://code.claude.com/docs/en/permissions#read-and-edit
-                tmp_dir = "./tmp",
-
-                --- Completions: #rules and @files in the prompt buffer
-                completion = {
-                    -- I am going to disable these until i understand the
-                    -- problem better.  Inside of cursor rules there is also
-                    -- application rules, which means i need to apply these
-                    -- differently
-                    -- cursor_rules = "<custom path to cursor rules>"
-
-                    --- A list of folders where you have your own SKILL.md
-                    --- Expected format:
-                    --- /path/to/dir/<skill_name>/SKILL.md
-                    ---
-                    --- Example:
-                    --- Input Path:
-                    --- "scratch/custom_rules/"
-                    ---
-                    --- Output Rules:
-                    --- {path = "scratch/custom_rules/vim/SKILL.md", name = "vim"},
-                    --- ... the other rules in that dir ...
-                    ---
-                    custom_rules = {
-                      "scratch/custom_rules/",
-                    },
-
-                    --- Configure @file completion (all fields optional, sensible defaults)
-                    files = {
-                        -- enabled = true,
-                        -- max_file_size = 102400,     -- bytes, skip files larger than this
-                        -- max_files = 5000,            -- cap on total discovered files
-                        -- exclude = { ".env", ".env.*", "node_modules", ".git", ... },
-                    },
-                    --- File Discovery:
-                    --- - In git repos: Uses `git ls-files` which automatically respects .gitignore
-                    --- - Non-git repos: Falls back to filesystem scanning with manual excludes
-                    --- - Both methods apply the configured `exclude` list on top of gitignore
-
-                    --- What autocomplete engine to use. Defaults to native (built-in) if not specified.
-                    source = "native", -- "native" (default), "cmp", or "blink"
-                },
-
-                --- WARNING: if you change cwd then this is likely broken
-                --- ill likely fix this in a later change
-                ---
-                --- md_files is a list of files to look for and auto add based on the location
-                --- of the originating request.  That means if you are at /foo/bar/baz.lua
-                --- the system will automagically look for:
-                --- /foo/bar/AGENT.md
-                --- /foo/AGENT.md
-                --- assuming that /foo is project root (based on cwd)
-				md_files = {
-					"AGENT.md",
-				},
-			})
-
-            -- take extra note that i have visual selection only in v mode
-            -- technically whatever your last visual selection is, will be used
-            -- so i have this set to visual mode so i dont screw up and use an
-            -- old visual selection
-            --
-            -- likely ill add a mode check and assert on required visual mode
-            -- so just prepare for it now
-			vim.keymap.set("v", "<leader>9v", function()
-				_99.visual()
-			end)
-
-            --- if you have a request you dont want to make any changes, just cancel it
-			vim.keymap.set("n", "<leader>9x", function()
-				_99.stop_all_requests()
-			end)
-
-			vim.keymap.set("n", "<leader>9s", function()
-				_99.search()
-			end)
-		end,
-	},
+{
+	"FilipJaskovic/99",
+	config = function()
+		local _99 = require("99")
+		_99.setup({
+			provider = _99.Providers.CodexProvider,
+			-- Omit model to use your Codex CLI configuration.
+			completion = { source = "native" },
+			md_files = { "AGENTS.md" },
+		})
+		vim.keymap.set("x", "<leader>9v", _99.visual)
+		vim.keymap.set("n", "<leader>9s", _99.search)
+		vim.keymap.set("n", "<leader>9x", _99.stop_all_requests)
+	end,
+}
 ```
 
 ### Usage
-I would highly recommend trying out `search` as its the direction the library is going
-
-```lua
-_99.search()
-```
-
-See search for more details
+Select text and run `visual()` to request a replacement. The replacement
+applies only if the source buffer has not changed since capture.
+`search()` returns locations in the quickfix list. `tutorial()` opens a
+Markdown explanation. `vibe()` lets Codex edit files in the workspace.
+Visual, search, and tutorial requests use the read-only Codex sandbox.
+Vibe uses workspace-write. Codex also loads its own configuration and tools.
 
 ### Description
 | Name | Type | Default Value |
@@ -167,7 +66,8 @@ Performs a search across your project with the prompt you provide and return out
 locations with notes that will be put into your quick fix list.
 
 #### vibe
-No description.
+will ask opencode or whatever provider currently being used to perform a vibe
+session.
 
 #### open
 Opens a selection window for you to select the last interaction to open
@@ -180,12 +80,12 @@ takes your current selection and sends that along with the prompt provided and r
 your visual selection with the results
 
 #### view_logs
-views the most recent logs and setups the machine to view older and new logs
-this is still pretty rough and will change in the near future
+view_logs allows you to select the request you want to see and then you
+get to see the logs.
 
 #### stop_all_requests
 stops all in flight requests.  this means that the underlying process will
-be killed (OpenCode) and any result will be discared
+receive a termination signal, and late results are discarded
 
 #### clear_previous_requests
 clears all previous search and visual operations
@@ -227,13 +127,15 @@ No description.
 | --- | --- | --- |
 | `logger` | `_99.Logger.Options \| nil` | - |
 | `model` | `string \| nil` | - |
-| `in_flight_options` | `_99.InFlight.Opts \| nil` | - |
+| `in_flight_options` | `_99.StatusWindow.Opts \| nil` | - |
 | `md_files` | `string[] \| nil` | - |
 | `provider` | `_99.Providers.BaseProvider \| nil` | - |
+| `provider_extra_args` | `string[] \| nil` | - |
 | `display_errors` | `boolean \| nil` | - |
-| `auto_add_skills` | `boolean \| nil` | - |
 | `completion` | `_99.Completion \| nil` | - |
 | `tmp_dir` | `string \| nil` | - |
+| `request_timeout` | `number \| nil` | - |
+| `max_response_bytes` | `number \| nil` | - |
 
 ### API
 
@@ -252,16 +154,43 @@ No description.
 #### provider
 No description.
 
-#### display_errors
+#### provider_extra_args
 No description.
 
-#### auto_add_skills
+#### display_errors
 No description.
 
 #### completion
 No description.
 
 #### tmp_dir
+No description.
+
+#### request_timeout
+Request deadline in milliseconds. Default: 300000.
+
+#### max_response_bytes
+Maximum response file size. Default: 4194304.
+
+## _99.State.Tracking
+No description.
+
+### Description
+| Name | Type | Default Value |
+| --- | --- | --- |
+| `history` | `_99.Prompt[]` | - |
+| `id_to_request` | `table<number, _99.Prompt>` | - |
+| `setup` | `fun(opts: _99.State.Tracking.Config.Options): nil` | - |
+
+### API
+
+#### history
+No description.
+
+#### id_to_request
+No description.
+
+#### setup
 No description.
 
 ## _99.ops.Opts
@@ -331,7 +260,7 @@ No description.
 ### Description
 | Name | Type | Default Value |
 | --- | --- | --- |
-| `source` | `"cmp" \| "blink" \| nil` | - |
+| `source` | `"native" \| "cmp" \| "blink" \| nil` | - |
 | `custom_rules` | `string[]` | - |
 | `files` | `_99.Files.Config?` | - |
 
@@ -345,28 +274,6 @@ No description.
 
 #### files
 No description.
-
-## _99.InFlight.Opts
-this is pure a class for testing.   helps controls timings
-
-### Description
-| Name | Type | Default Value |
-| --- | --- | --- |
-| `throbber_opts` | `_99.Throbber.Opts \| nil` | - |
-| `in_flight_interval` | `number \| nil` | - |
-| `enable` | `boolean \| nil` | - |
-
-### API
-
-#### throbber_opts
-options for the throbber in the top left
-
-#### in_flight_interval
-frequency in which the in-flight interval checks to see if it should be
-displayed / removed
-
-#### enable
-defaults to true
 
 ## _99.Logger.Options
 No description.
@@ -397,6 +304,28 @@ No description.
 #### max_requests_cached
 No description.
 
+## _99.StatusWindow.Opts
+this is pure a class for testing.   helps controls timings
+
+### Description
+| Name | Type | Default Value |
+| --- | --- | --- |
+| `throbber_opts` | `_99.Throbber.Opts \| nil` | - |
+| `in_flight_interval` | `number \| nil` | - |
+| `enable` | `boolean \| nil` | - |
+
+### API
+
+#### throbber_opts
+options for the throbber in the top left
+
+#### in_flight_interval
+frequency in which the in-flight interval checks to see if it should be
+displayed / removed
+
+#### enable
+defaults to true
+
 ## _99.Agents.Rule
 No description.
 
@@ -406,6 +335,7 @@ No description.
 | `name` | `string` | - |
 | `path` | `string` | - |
 | `absolute_path` | `string?` | - |
+| `root` | `string?` | - |
 
 ### API
 
@@ -418,83 +348,47 @@ No description.
 #### absolute_path
 No description.
 
-## Completions
+#### root
+Configured directory used to confine reads
 
-When prompting, you can reference rules and files to add context to your request.
+## Context references
 
-- `#` references rules — type `#` in the prompt to autocomplete rule files from your configured rule directories
-- `@` references files — type `@` to fuzzy-search project files. This will exclude files that are in .gitignore.
+Use `@` to reference project files and `#` to reference configured rules. Native completion is the default. `cmp` and `blink` are optional alternatives.
 
-Referenced content is automatically resolved and injected into the AI context. Native completions work by default. For nvim-cmp or blink.cmp, set `source = "cmp"` or `source = "blink"`.
+Completion quotes paths that contain spaces, such as `@"My Note.md"`. Set `completion.files.enabled = false` to disable file references. Discovered file references must stay inside their project root after resolving symlinks. This restriction applies to 99's context collection, not to the Codex runtime's own read access.
 
 ## Providers
-99 supports multiple AI CLI backends. Set `provider` in your setup to switch. If you don't set `model`, the provider's default is used.
 
-| Provider | CLI tool | Default model |
-|---|---|---|
-| `OpenCodeProvider` (default) | `opencode` | `opencode/claude-sonnet-4-5` |
+| Provider | CLI | Default model |
+| --- | --- | --- |
+| `CodexProvider` | `codex` | Your Codex configuration |
+| `OpenCodeProvider` | `opencode` | `opencode/claude-sonnet-4-5` |
 | `ClaudeCodeProvider` | `claude` | `claude-sonnet-4-5` |
 | `CursorAgentProvider` | `cursor-agent` | `sonnet-4.5` |
+| `KiroProvider` | `kiro-cli` | `claude-sonnet-4.5` |
 | `GeminiCLIProvider` | `gemini` | `auto` |
 
-```lua
-_99.setup({
-    provider = _99.Providers.ClaudeCodeProvider,
-    -- model is optional, overrides the provider's default
-    model = "claude-sonnet-4-5",
-})
+Set `provider` to choose another backend. Set `model` to override its default. For Codex, `model = "default"` restores the CLI's configured model.
+
+Codex receives the prompt over stdin and writes its final response through `--output-last-message`. This works in ordinary folders, including Obsidian vaults without Git. Each request is ephemeral and has a five-minute deadline. Set `request_timeout` in milliseconds to change the deadline, and `max_response_bytes` to change the 4 MiB response limit.
+
+Visual, search, and tutorial requests use `read-only`. Vibe uses `workspace-write`. Codex runs without interactive approval prompts, so denied actions fail instead of waiting for terminal input. Its configured instructions, MCP servers, and other tools still apply. Read-only does not prevent access to every readable file or disable external tools.
+
+`provider_extra_args` is advanced, trusted configuration. Codex accepts supported configuration flags and explicit sandbox overrides, but rejects arguments that replace its response transport or prompt. A sandbox override changes the permissions described above. Other providers retain their own permission models. Claude, Cursor, and Kiro no longer receive permission-bypass flags automatically.
+
+## Pickers
+
+With Telescope installed, use `require("99.extensions.telescope").select_provider()` or `.select_model()`. With fzf-lua, use `require("99.extensions.fzf_lua")` instead. Provider switching resets the selected model.
+
+## Maintenance
+
+The Git remote `upstream` points to ThePrimeagen/99. Keep upstream updates separate from feature changes so they can be reviewed and tested before adoption.
+
+Run `make pr_ready` for lint, tests, formatting, and the documented setup check. Run `make docs_check` with Node.js 22.6 or newer to verify generated documentation. After changing API comments, regenerate both documentation files:
+
+```sh
+node --experimental-strip-types docs/src/generate.ts
+./gen-docs
 ```
 
-## Extensions
-
-### Telescope Model Selector
-
-If you have [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) installed, you can switch models on the fly via the Telescope picker:
-
-```lua
-vim.keymap.set("n", "<leader>9m", function()
-  require("99.extensions.telescope").select_model()
-end)
-```
-
-The selected model is used for all subsequent requests in the current session.
-
-### Telescope Provider Selector
-
-Switch between providers (OpenCode, Claude, Cursor, Kiro) without restarting Neovim. Switching provider also resets the model to that provider's default.
-
-```lua
-vim.keymap.set("n", "<leader>9p", function()
-  require("99.extensions.telescope").select_provider()
-end)
-```
-
-### fzf-lua
-
-If you use [fzf-lua](https://github.com/ibhagwan/fzf-lua) instead of telescope, the same pickers are available:
-
-```lua
-vim.keymap.set("n", "<leader>9m", function()
-  require("99.extensions.fzf_lua").select_model()
-end)
-
-vim.keymap.set("n", "<leader>9p", function()
-  require("99.extensions.fzf_lua").select_provider()
-end)
-```
-
-## Reporting a bug
-
-To report a bug, please provide the full running debug logs. This may require
-a bit of back and forth.
-
-Please do not request features. We will hold a public discussion on Twitch about
-features, which will be a much better jumping point then a bunch of requests that i have to close down. If you do make a feature request ill just shut it down instantly.
-
-### The logs
-To get the _last_ run's logs execute `:lua require("99").view_logs()`.
-
-### Dont forget
-If there are secrets or other information in the logs you want to be removed make
-sure that you delete the `query` printing. This will likely contain information you may not want to share.
-
+The implementation keeps successful history in the configured `tmp_dir`, which defaults to `./tmp` resolved at setup. Temporary request directories are private and removed on completion or cancellation. History and diagnostic logs can contain prompt text, file contents, and model responses. Review them before sharing. View in-memory request logs with `:lua require("99").view_logs()`. For rejected visual edits, this view also includes the full unapplied response while the request remains in history.

@@ -220,6 +220,7 @@ end
 --- @field start _99.Point
 --- @field end_ _99.Point
 --- @field buffer number
+--- @field linewise? boolean
 local Range = {}
 Range.__index = Range
 
@@ -236,51 +237,66 @@ end
 
 function Range.from_visual_selection()
   local buffer = vim.api.nvim_get_current_buf()
-  local start_pos = vim.fn.getpos("'<")
-  local end_pos = vim.fn.getpos("'>")
-  local start = Point:from_1_based(start_pos[2], start_pos[3])
-  local end_ = Point:from_1_based(end_pos[2], end_pos[3])
+  local mode = vim.fn.visualmode()
+  assert(mode ~= "\22", "99: blockwise visual selections are not supported")
 
-  --- visual line mode will select the end point for each row to be int max
-  --- which will cause marks to fail. so we have to correct it to the literal
-  --- row length
-  local end_row, _ = end_:to_vim()
-  local end_line =
-    vim.api.nvim_buf_get_lines(buffer, end_row, end_row + 1, false)
-
-  --- @type number
-  local end_col
-
-  --- another bug where mark >' is beyond the editor.
-  --- therefore will just grab from start to end and use the last captured row
-  --- as the means to discover the proper end col and end row
-  if #end_line == 0 then
-    local start_r, _ = start:to_vim()
-    local selected_lines =
-      vim.api.nvim_buf_get_lines(buffer, start_r, end_row, false)
-    end_row = start_r + #selected_lines
-    --- another edge case, the buffer may be empty...
-    --- sentry literally caught this one
-    if #selected_lines == 0 then
-      --- an edge to the edge case. we are in 1 based indexing... f
-      end_col = 1
-    else
-      end_col = #selected_lines[#selected_lines]
-    end
-    --- here is confusing part, we are now in 1 based values
-    --- in the geo_spec test, this would result in end_row = 2, end_col = 8
-    --- so, there is this -1 because we are going to go from 1 based to 0 based
-    end_row = end_row - 1
-
-    --- we need to capture the whole line, therefore its end of line + 1
-    end_col = end_col
-  else
-    --- we are using zero based point, which means length of line includes the new_line character
-    end_col = #end_line[1]
+  local count = vim.api.nvim_buf_line_count(buffer)
+  local function position(mark)
+    local pos = vim.fn.getpos(mark)
+    assert(pos[2] > 0, "99: no visual selection in this buffer")
+    local row = math.min(pos[2], count)
+    local line = vim.api.nvim_buf_get_lines(buffer, row - 1, row, true)[1]
+    local col = pos[2] > count and #line + 1 or pos[3]
+    return { buffer, row, math.max(1, math.min(col, #line + 1)), pos[4] }
   end
 
-  local actual_end = Point.from_0_based(end_row, end_col)
-  return Range:new(buffer, start, actual_end)
+  local start_pos = position("'<")
+  local end_pos = position("'>")
+  if mode == "V" then
+    local line =
+      vim.api.nvim_buf_get_lines(buffer, end_pos[2] - 1, end_pos[2], true)[1]
+    local range = Range:new(
+      buffer,
+      Point:from_1_based(start_pos[2], 1),
+      Point:from_1_based(end_pos[2], #line + 1)
+    )
+    range.linewise = true
+    return range
+  end
+
+  -- Neovim resolves exclusive endpoints and complete UTF-8 characters.
+  local segments = vim.fn.getregionpos(start_pos, end_pos, {
+    type = "v",
+    exclusive = vim.o.selection == "exclusive",
+    eol = true,
+  })
+  assert(#segments > 0, "99: visual selection is unavailable")
+  local first = segments[1][1]
+  local last = segments[#segments][2]
+  assert(
+    first[4] == 0 and last[4] == 0,
+    "99: virtual-column visual selections are not supported"
+  )
+  local end_row = last[2]
+  local line = vim.api.nvim_buf_get_lines(buffer, end_row - 1, end_row, true)[1]
+  local end_col = math.min(last[3], #line)
+  local single = start_pos[2] == end_pos[2] and start_pos[3] == end_pos[3]
+  if vim.o.selection == "exclusive" and not single then
+    -- Keep an exclusive endpoint on the next row: the preceding newline is selected.
+    end_row, end_col = end_pos[2], end_pos[3] - 1
+  elseif
+    vim.o.selection ~= "old"
+    and end_pos[3] > #line
+    and end_row < count
+  then
+    -- Inclusive EOL and a single empty-line selection include the line break.
+    end_row, end_col = end_row + 1, 0
+  end
+  return Range:new(
+    buffer,
+    Point:from_1_based(first[2], math.max(first[3], 1)),
+    Point:from_1_based(end_row, end_col + 1)
+  )
 end
 
 ---@param node _99.treesitter.Node
@@ -312,6 +328,16 @@ end
 function Range:replace_text(replace_with)
   local s_row, s_col = self.start:to_vim()
   local e_row, e_col = self.end_:to_vim()
+  if self.linewise then
+    vim.api.nvim_buf_set_lines(
+      self.buffer,
+      s_row,
+      e_row + 1,
+      true,
+      replace_with
+    )
+    return
+  end
   vim.api.nvim_buf_set_text(
     self.buffer,
     s_row,
@@ -335,11 +361,6 @@ end
 function Range:to_text()
   local sr, sc = self.start:to_vim()
   local er, ec = self.end_:to_vim()
-
-  --- blank line vis selection
-  if sr == er and sc == ec then
-    ec = ec + 1
-  end
 
   local text = vim.api.nvim_buf_get_text(self.buffer, sr, sc, er, ec, {})
   return table.concat(text, "\n")

@@ -25,9 +25,8 @@ end
 
 local function prompt_context_lines(range)
   local prompt = prompt_settings.prompts.visual_selection(range)
-  local context = prompt:match(
-    "<SURROUNDING_CONTEXT>\n(.-)\n</SURROUNDING_CONTEXT>"
-  )
+  local context =
+    prompt:match("<SURROUNDING_CONTEXT>\n(.-)\n</SURROUNDING_CONTEXT>")
 
   assert.is_not_nil(context)
   if context == "" then

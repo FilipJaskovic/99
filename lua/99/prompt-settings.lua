@@ -15,7 +15,7 @@ end
 --- @class _99.Prompts.SpecificOperations
 --- @field visual_selection fun(range: _99.Range): string
 --- @field semantic_search fun(): string
---- @field vibe fun(): string
+--- @field vibe fun(response_mode?: string): string
 --- @field tutorial fun(): string
 --- @field prompt fun(prompt: string, action: string, name?: string): string
 --- @field role fun(): string
@@ -53,7 +53,7 @@ See <Output> for example
 </Rule>
 <Rule>NOTES cannot have new lines</Rule>
 <Rule>You must adhere to the output format</Rule>
-<Rule>Double check output format before writing it to the file</Rule>
+<Rule>Double check output format before returning the results</Rule>
 <Rule>Each location is separated by new lines</Rule>
 <Rule>Each path is specified in absolute pathing</Rule>
 <Rule>You can provide notes you think are relevant per location</Rule>
@@ -74,7 +74,19 @@ you are given a prompt and you must search through this project and return code 
 </TaskDescription>
 ]]
   end,
-  vibe = function()
+  vibe = function(response_mode)
+    local output_instructions = response_mode == "stdout"
+        and [[
+You are given a <Prompt> and you must implement it. Every change you make must
+be described according to <Output> in your final response.
+Return only the text locations, without commentary.
+]]
+      or [[
+You are given a <Prompt> and you must implement it.  Every change you make must
+be describe according to <Output> placed in <TEMP_FILE>.
+Never respond as output what you have done.
+Always use the temporary file as the place to describe your actions according to Output rules
+]]
     return [[
 <Output>
 /path/to/project/src/foo.js:24:8,3,Some notes here about some stuff, it can contain commas
@@ -92,7 +104,7 @@ See <Output> for example
 </Rule>
 <Rule>NOTES cannot have new lines</Rule>
 <Rule>You must adhere to the output format</Rule>
-<Rule>Double check output format before writing it to the file</Rule>
+<Rule>Double check output format before returning the results</Rule>
 <Rule>Each location is separated by new lines</Rule>
 <Rule>Each path is specified in absolute pathing</Rule>
 <Rule>You can provide notes you think are relevant per location</Rule>
@@ -108,12 +120,7 @@ baz.js at line 1, char 1 and the next 51 lines
 </Meaning>
 </Example>
 <TaskDescription>
-You are given a <Prompt> and you must implement it.  Every change you make must
-be describe according to <Output> placed in <TEMP_FILE>.
-Never respond as output what you have done.
-Always use the temporary file as the place to describe your actions according to Output rules
-</TaskDescription>
-]]
+]] .. output_instructions .. "</TaskDescription>\n"
   end,
   output_file = function()
     return [[

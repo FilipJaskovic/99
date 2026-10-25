@@ -34,7 +34,6 @@ describe("providers", function()
         Providers.ClaudeCodeProvider._build_command(nil, "test query", request)
       eq({
         "claude",
-        "--dangerously-skip-permissions",
         "--model",
         "anthropic/claude-sonnet-4-5",
         "--print",
@@ -97,13 +96,13 @@ describe("providers", function()
     end)
 
     it(
-      "uses OpenCodeProvider default model when no provider or model specified",
+      "uses CodexProvider default model when no provider or model specified",
       function()
         local _99 = require("99")
 
         _99.setup({})
         local state = _99.__get_state()
-        eq("opencode/claude-sonnet-4-5", state.model)
+        eq("default", state.model)
       end
     )
 
