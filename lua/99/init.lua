@@ -75,7 +75,6 @@ local status_window
 --- ```lua
 --- {
 --- 	"FilipJaskovic/99",
---- 	branch = "codex-and-audit",
 --- 	config = function()
 --- 		local _99 = require("99")
 --- 		_99.setup({

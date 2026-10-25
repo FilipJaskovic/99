@@ -18,7 +18,6 @@ Codex CLI. The integration was developed against Codex CLI 0.164.0.
 ```lua
 {
 	"FilipJaskovic/99",
-	branch = "codex-and-audit",
 	config = function()
 		local _99 = require("99")
 		_99.setup({
