@@ -1,5 +1,3 @@
-local Agents = require("99.extensions.agents")
-local Files = require("99.extensions.files")
 local Completions = require("99.extensions.completions")
 -- Import while the extension router's protected require can report a missing dependency.
 local cmp = require("cmp")
@@ -75,31 +73,7 @@ local function init_for_buffer(_)
 end
 
 --- @param _99 _99.State
-local function register_providers(_99)
-  Completions.register(Agents.completion_provider(_99))
-  Completions.register(Files.completion_provider())
-end
-
---- @param _99 _99.State
 local function init(_99)
-  -- Collect rule directories to exclude from file search
-  local rule_dirs = {}
-  if _99.completion then
-    if _99.completion.custom_rules then
-      for _, dir in ipairs(_99.completion.custom_rules) do
-        table.insert(rule_dirs, dir)
-      end
-    end
-  end
-
-  if _99.completion and _99.completion.files then
-    Files.setup(_99.completion.files, rule_dirs)
-  else
-    Files.setup({ enabled = true }, rule_dirs)
-  end
-
-  register_providers(_99)
-
   if source then
     source._99 = _99
   else
@@ -114,7 +88,6 @@ local function refresh_state(_99)
     return
   end
   source._99 = _99
-  register_providers(_99)
 end
 
 --- @type _99.Extensions.Source

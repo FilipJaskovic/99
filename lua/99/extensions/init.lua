@@ -1,9 +1,11 @@
 local Files = require("99.extensions.files")
+local Agents = require("99.extensions.agents")
+local Completions = require("99.extensions.completions")
 
 --- @class _99.Extensions.Source
 --- @field init_for_buffer fun(_99: _99.State): nil
---- @field init fun(_99: _99.State): nil
---- @field refresh_state fun(_99: _99.State): nil
+--- @field init? fun(_99: _99.State): nil
+--- @field refresh_state? fun(_99: _99.State): nil
 
 --- @param completion _99.Completion | nil
 --- @return _99.Extensions.Source | nil
@@ -55,14 +57,22 @@ local function capture_project_root(cwd)
   Files.set_project_root(Files.project_root(cwd or vim.fn.getcwd()))
 end
 
+local function register_providers(_99)
+  Completions.register(Agents.completion_provider(_99))
+  Completions.register(Files.completion_provider())
+end
+
 return {
   --- @param _99 _99.State
   init = function(_99)
+    -- Reference policy applies even when the optional completion UI cannot load.
+    local completion = _99.completion or {}
+    Files.setup(completion.files or {}, completion.custom_rules or {})
+    register_providers(_99)
     local source = get_source(_99.completion)
-    if not source then
-      return
+    if source and source.init then
+      source.init(_99)
     end
-    source.init(_99)
   end,
 
   capture_project_root = capture_project_root,
@@ -79,10 +89,10 @@ return {
   --- @param _99 _99.State
   refresh = function(_99, root)
     capture_project_root(root)
+    register_providers(_99)
     local source = get_source(_99.completion)
-    if not source then
-      return
+    if source and source.refresh_state then
+      source.refresh_state(_99)
     end
-    source.refresh_state(_99)
   end,
 }

@@ -2,6 +2,7 @@
 local Completions = require("99.extensions.completions")
 local Native = require("99.extensions.native")
 local eq = assert.are.same
+vim.opt.runtimepath:prepend(vim.fn.getcwd())
 
 local function state(source)
   return {
@@ -193,4 +194,61 @@ describe("cmp and blink adapter initialization", function()
     eq(1, #notifications)
     assert(notifications[1]:find("nvim%-cmp is not installed"))
   end)
+
+  it(
+    "applies file policy even when the selected adapter is unavailable",
+    function()
+      local api = require("99")
+      local helpers = require("99.test.test_utils")
+      local provider = helpers.TestProvider.new()
+      local cwd = vim.fn.getcwd()
+      local root = vim.fn.tempname()
+      vim.fn.mkdir(root, "p")
+      vim.fn.writefile({ "PRIVATE_MARKER" }, root .. "/private.txt")
+      package.loaded.cmp = nil
+      package.loaded["99.extensions.cmp"] = nil
+      package.loaded["blink.compat"] = nil
+      package.preload.cmp = function()
+        error("cmp intentionally unavailable")
+      end
+      package.preload["blink.compat"] = function()
+        error("blink intentionally unavailable")
+      end
+
+      local function query(source, files)
+        api.setup(helpers.get_test_setup_options({
+          tmp_dir = root .. "/state",
+          completion = { source = source, files = files },
+          in_flight_options = { enable = false },
+        }, provider))
+        api.search({ additional_prompt = "@private.txt" })
+        local text = provider.request.query
+        provider:resolve("cancelled", "")
+        return text
+      end
+      local ok, err = pcall(function()
+        vim.api.nvim_set_current_dir(root)
+        for _, source in ipairs({ "cmp", "blink", "unavailable" }) do
+          assert(query("native", {}):find("PRIVATE_MARKER", 1, true))
+          assert.is_nil(
+            query(source, { enabled = false }):find("PRIVATE_MARKER", 1, true)
+          )
+          assert.is_nil(
+            query(source, { exclude = { "private.txt" } }):find(
+              "PRIVATE_MARKER",
+              1,
+              true
+            )
+          )
+          for _, item in ipairs(Completions.get_completions("@")) do
+            assert.is_not.equal("@private.txt", item.insertText)
+          end
+        end
+      end)
+      api.stop_all_requests()
+      vim.api.nvim_set_current_dir(cwd)
+      vim.fn.delete(root, "rf")
+      assert.is_true(ok, err)
+    end
+  )
 end)

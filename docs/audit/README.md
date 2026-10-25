@@ -24,13 +24,24 @@ This work changes the fork checkout. It does not install the fork, change Filip'
 | [Tests and compatibility](tests.md) | macOS paths, real filesystem fixtures, Neovim 0.11.5 Linux/macOS CI, documented-setup evaluation, generated-document checks |
 | [Public API](api.md) | Provider/model snapshots, reusable caller options, stale picker results, native completion scope and timers, repeated cmp setup, corrected API documentation |
 
-Root-level fixes also stop old requests and status loops during setup, isolate each stop-all cleanup, and bind the history directory to the cwd at setup. The unsupported `auto_add_skills` annotation was removed. The logger bounds retained bytes per request.
+Root-level fixes also stop old requests and status loops during setup, isolate each stop-all cleanup, and bind the history directory to the cwd at setup. The unsupported `auto_add_skills` annotation was removed. The logger bounds retained bytes per request. Core extension setup applies file-reference policy even if an optional completion adapter cannot load.
 
 ## Validation
 
-The baseline had 103 passing tests and two failures: obsolete Cursor flags and macOS path canonicalization. Both are resolved. The combined branch passes all 204 tests on macOS with both Neovim 0.11.5 and Neovim 0.13.0-dev. `make pr_ready docs_check` passes on the installed build, including lint, formatting, documented-setup evaluation, and both generated README checks. `make lua_test docs_smoke` passes with the isolated 0.11.5 release. Logs are `/tmp/99-pr-ready-final.log` and `/tmp/99-minimum-final.log`.
+The baseline had 103 passing tests and two failures: obsolete Cursor flags and macOS path canonicalization. Both are resolved. The combined branch passes all 205 tests on macOS with both Neovim 0.11.5 and Neovim 0.13.0-dev. `make pr_ready docs_check` passes on the installed build, including lint, formatting, documented-setup evaluation, and both generated README checks. `make lua_test docs_smoke` passes with the isolated 0.11.5 release. Logs are `/tmp/99-review-fix.log` and `/tmp/99-installed-final.log`.
 
 A live Codex CLI 0.164.0 test used a disposable non-Git folder and synthetic text. Visual replacement changed exactly the selected first line, preserved the following line, and did not write the source file on disk. It used the existing ChatGPT login with `--ignore-user-config` to isolate the smoke test from custom tools and instructions. Ordinary plugin use preserves Codex configuration.
+
+## Independent final review
+
+Two fresh GPT-6.1 Sol agents reviewed the combined diff after implementation.
+
+| Axis | Result |
+| --- | --- |
+| [Standards and regressions](final-standards.md) | No actionable findings. The reviewer independently ran 21 process and worker tests. |
+| [Spec](final-spec.md) | One reproduced P2 finding: a missing completion adapter could retain old file-reference policy. Core setup now owns that policy. The reviewer reran the reproduction with the expected result inverted and verified all seven adapter tests. No unresolved findings remain in this review. |
+
+The first macOS CI run exposed an existing status-window test's fixed 20 ms timing assumption. It now uses bounded condition waits. Both Linux and macOS CI passed that correction before the final adapter-policy fix was submitted. CI checks on the pull request are the source of truth for its latest commit.
 
 ## Remaining limits
 
