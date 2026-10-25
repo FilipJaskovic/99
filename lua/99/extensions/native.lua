@@ -3,6 +3,7 @@ local Files = require("99.extensions.files")
 local Completions = require("99.extensions.completions")
 
 local DEBOUNCE_MS = 100
+local completion_cleanup = {}
 
 --- @param items CompletionItem[]
 --- @return table[]
@@ -36,11 +37,26 @@ end
 
 --- @param buf number
 local function setup_completion_autocmd(buf)
-  local timer = vim.uv.new_timer()
+  if completion_cleanup[buf] then
+    completion_cleanup[buf]()
+  end
+  local timer = assert(vim.uv.new_timer())
+  local disposed = false
   local group = vim.api.nvim_create_augroup(
     "99_native_completion_" .. buf,
     { clear = true }
   )
+  local function dispose()
+    if disposed then
+      return
+    end
+    disposed = true
+    timer:stop()
+    timer:close()
+    completion_cleanup[buf] = nil
+    pcall(vim.api.nvim_del_augroup_by_id, group)
+  end
+  completion_cleanup[buf] = dispose
 
   vim.api.nvim_create_autocmd("TextChangedI", {
     group = group,
@@ -51,12 +67,12 @@ local function setup_completion_autocmd(buf)
         DEBOUNCE_MS,
         0,
         vim.schedule_wrap(function()
-          if vim.fn.mode() ~= "i" then
-            return
-          end
-
-          if not vim.api.nvim_buf_is_valid(buf) then
-            timer:stop()
+          if
+            disposed
+            or not vim.api.nvim_buf_is_valid(buf)
+            or vim.api.nvim_get_current_buf() ~= buf
+            or vim.fn.mode() ~= "i"
+          then
             return
           end
 
@@ -64,18 +80,7 @@ local function setup_completion_autocmd(buf)
           local col = vim.fn.col(".")
           local before = line:sub(1, col - 1)
 
-          local trigger = nil
-          local start_col = nil
-          for _, char in ipairs(Completions.get_trigger_characters()) do
-            local escaped = Completions.escape_pattern(char)
-            local pattern = escaped .. "%S*$"
-            local match_start = before:find(pattern)
-            if match_start then
-              trigger = char
-              start_col = match_start
-              break
-            end
-          end
+          local trigger, start_col = Completions.find_active_reference(before)
 
           if not trigger or not start_col then
             return
@@ -96,10 +101,7 @@ local function setup_completion_autocmd(buf)
   vim.api.nvim_create_autocmd("BufWipeout", {
     group = group,
     buffer = buf,
-    callback = function()
-      timer:stop()
-      pcall(vim.api.nvim_del_augroup_by_id, group)
-    end,
+    callback = dispose,
   })
 end
 

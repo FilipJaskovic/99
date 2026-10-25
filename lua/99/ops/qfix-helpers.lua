@@ -2,18 +2,29 @@ local M = {}
 
 --- @return _99.Search.Result | nil
 function M.parse_line(line)
-  local filepath, lnum_raw, rest = line:match("^(.-):([^:]+):(.+)$")
-  if not filepath or not lnum_raw or not rest then
+  -- Stop at the first coordinate suffix so location-like text in notes stays intact.
+  local filepath, lnum_raw, col_raw, count_raw, notes =
+    line:match("^(.-):(%d+):(%d+),(%d+),(.*)$")
+  if not filepath or filepath == "" then
     return nil
   end
 
-  local col_raw, _, notes = rest:match("^([^,]+),([^,]+),?(.*)$")
-  if not col_raw then
+  local lnum, col, count =
+    tonumber(lnum_raw), tonumber(col_raw), tonumber(count_raw)
+  local max_coordinate = 2147483647
+  if
+    not lnum
+    or not col
+    or not count
+    or lnum < 1
+    or col < 1
+    or count < 1
+    or lnum > max_coordinate
+    or col > max_coordinate
+    or count > max_coordinate
+  then
     return nil
   end
-
-  local lnum = tonumber(lnum_raw) or 1
-  local col = tonumber(col_raw) or 1
 
   return {
     filename = filepath,

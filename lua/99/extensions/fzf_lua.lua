@@ -29,7 +29,7 @@ function M.select_model(provider)
     return
   end
 
-  pickers_util.get_models(provider, function(models, current)
+  pickers_util.get_models(provider, function(models, current, selected_provider)
     fzf.fzf_exec(promote_current(models, current), {
       prompt = "99: Select Model (current: " .. current .. ")> ",
       actions = {
@@ -37,7 +37,7 @@ function M.select_model(provider)
           if not selected or #selected == 0 then
             return
           end
-          pickers_util.on_model_selected(selected[1])
+          pickers_util.on_model_selected(selected[1], selected_provider)
         end,
       },
     })

@@ -150,8 +150,13 @@ end
 --- @return _99.window.Window
 local function create_floating_window(config, title, enter)
   local buf_id = vim.api.nvim_create_buf(false, true)
-  local win_id =
-    vim.api.nvim_open_win(buf_id, enter, full_config(config, title))
+  vim.bo[buf_id].bufhidden = "wipe"
+  local ok, win_id =
+    pcall(vim.api.nvim_open_win, buf_id, enter, full_config(config, title))
+  if not ok then
+    vim.api.nvim_buf_delete(buf_id, { force = true })
+    error(win_id)
+  end
   local window = {
     config = config,
     win_id = win_id,
@@ -457,6 +462,8 @@ end
 
 --- @param name string
 --- @param opts _99.window.CaptureInputOpts
+--- @return _99.window.Window
+--- @return fun(success: boolean, result: string)
 function M.capture_input(name, opts)
   M.clear_active_popups()
 
@@ -465,7 +472,7 @@ function M.capture_input(name, opts)
     create_floating_window(config, string.format(" 99 %s ", name), true)
   win.type = "capture_input"
 
-  set_defaul_win_options(win, "99-prompt")
+  set_defaul_win_options(win, "99-prompt-" .. win.buf_id)
   vim.api.nvim_set_current_win(win.win_id)
 
   opts.keymap = opts.keymap or {}
@@ -490,28 +497,25 @@ function M.capture_input(name, opts)
     end,
   })
 
+  local finished = false
+  local function finish(success, result)
+    if finished then
+      return
+    end
+    finished = true
+    vim.api.nvim_del_augroup_by_id(group)
+    M.clear_active_popups()
+    opts.cb(success, result)
+  end
+
   vim.api.nvim_create_autocmd("BufWriteCmd", {
     group = group,
     buffer = win.buf_id,
     callback = function()
-      if not win_valid(win.win_id) then
-        return
+      if M.valid(win) then
+        local lines = vim.api.nvim_buf_get_lines(win.buf_id, 0, -1, false)
+        finish(true, table.concat(lines, "\n"))
       end
-      local lines = vim.api.nvim_buf_get_lines(win.buf_id, 0, -1, false)
-      local result = table.concat(lines, "\n")
-      M.clear_active_popups()
-      opts.cb(true, result)
-    end,
-  })
-
-  vim.api.nvim_create_autocmd("BufUnload", {
-    group = group,
-    buffer = win.buf_id,
-    callback = function()
-      if not win_valid(win.win_id) then
-        return
-      end
-      vim.api.nvim_del_augroup_by_id(group)
     end,
   })
 
@@ -519,21 +523,20 @@ function M.capture_input(name, opts)
     group = group,
     pattern = tostring(win.win_id),
     callback = function()
-      if not win_valid(win.win_id) then
-        return
-      end
-      M.clear_active_popups()
-      opts.cb(false, "")
+      finish(false, "")
     end,
   })
 
   vim.keymap.set("n", "q", function()
-    M.clear_active_popups()
-    opts.cb(false, "")
+    finish(false, "")
   end, { buffer = win.buf_id, nowait = true })
 
   if opts.on_load then
-    vim.schedule(opts.on_load)
+    vim.schedule(function()
+      if not finished and M.valid(win) then
+        vim.api.nvim_win_call(win.win_id, opts.on_load)
+      end
+    end)
   end
 
   if opts.content then
@@ -546,22 +549,18 @@ function M.capture_input(name, opts)
     )
   end
 
-  return win
+  return win, finish
 end
 
 --- @param name string
 --- @param opts _99.window.CaptureInputOpts
 function M.capture_select_input(name, opts)
-  local win
-  win = M.capture_input(name, {
+  local win, finish
+  win, finish = M.capture_input(name, {
     content = opts.content,
     rules = opts.rules,
     keymap = opts.keymap,
-    cb = function(success, result)
-      if not success then
-        opts.cb(false, result)
-      end
-    end,
+    cb = opts.cb,
     on_load = function()
       vim.bo[win.buf_id].modifiable = false
       vim.bo[win.buf_id].readonly = true
@@ -578,16 +577,16 @@ function M.capture_select_input(name, opts)
 
     local point = Point:from_cursor()
     local line = point:line(win.buf_id)
-    M.clear_active_popups()
-    opts.cb(true, line or "")
+    finish(true, line or "")
   end, { buffer = win.buf_id, nowait = true })
 end
 
 function M.clear_active_popups()
-  for _, window in ipairs(M.active_windows) do
+  local windows = M.active_windows
+  M.active_windows = {}
+  for _, window in ipairs(windows) do
     window_close(window)
   end
-  M.active_windows = {}
 end
 
 --- @return _99.window.Window
@@ -649,6 +648,8 @@ function M.refresh_active_windows()
   for _, w in ipairs(M.active_windows) do
     if M.valid(w) then
       table.insert(actives, w)
+    else
+      window_close(w)
     end
   end
   M.active_windows = actives
@@ -667,16 +668,13 @@ end
 
 --- @param win _99.window.Window
 function M.close(win)
-  if not M.valid(win) then
-    return
-  end
-  window_close(win)
   for i, active_win in ipairs(M.active_windows) do
     if active_win.win_id == win.win_id then
       table.remove(M.active_windows, i)
       break
     end
   end
+  window_close(win)
 end
 
 --- @class _99.window.SplitWindowOpts

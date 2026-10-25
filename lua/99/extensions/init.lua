@@ -51,6 +51,10 @@ local function get_source(completion)
   end
 end
 
+local function capture_project_root(cwd)
+  Files.set_project_root(Files.project_root(cwd or vim.fn.getcwd()))
+end
+
 return {
   --- @param _99 _99.State
   init = function(_99)
@@ -61,11 +65,7 @@ return {
     source.init(_99)
   end,
 
-  capture_project_root = function()
-    local cwd = vim.fn.getcwd()
-    local git_root = vim.fs.root(cwd, ".git")
-    Files.set_project_root(git_root or cwd)
-  end,
+  capture_project_root = capture_project_root,
 
   --- @param _99 _99.State
   setup_buffer = function(_99)
@@ -77,7 +77,8 @@ return {
   end,
 
   --- @param _99 _99.State
-  refresh = function(_99)
+  refresh = function(_99, root)
+    capture_project_root(root)
     local source = get_source(_99.completion)
     if not source then
       return

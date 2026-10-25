@@ -106,6 +106,50 @@ describe("completions", function()
     eq({}, Completions.parse("just a plain prompt"))
   end)
 
+  it(
+    "round-trips quoted paths and rejects malformed quoted references",
+    function()
+      local name = 'folder/My "Note"\\file.md'
+      Completions.register(mock_provider("@", "files", { [name] = "CONTENTS" }))
+      local inserted = Completions.format_reference("@", name)
+      eq('@"', inserted:sub(1, 2))
+      eq({ { content = "CONTENTS" } }, Completions.parse(inserted))
+      eq({}, Completions.parse('@"unterminated'))
+      eq({}, Completions.parse('@"bad\\q"'))
+      eq({}, Completions.parse(inserted .. "suffix"))
+    end
+  )
+
+  it(
+    "finds active ordinary and quoted references for native completion",
+    function()
+      Completions.register(mock_provider("@", "files", {}))
+      Completions.register(mock_provider("#", "rules", {}))
+      local trigger, col = Completions.find_active_reference('use @"My Note')
+      eq("@", trigger)
+      eq(5, col)
+      trigger, col = Completions.find_active_reference("use #")
+      eq("#", trigger)
+      eq(5, col)
+      eq(nil, Completions.find_active_reference('@"My Note"'))
+      eq(nil, Completions.find_active_reference("use @file "))
+      eq(nil, Completions.find_active_reference("name@example.com"))
+    end
+  )
+
+  it(
+    "includes repeated references once and preserves their order in the prompt",
+    function()
+      Completions.register(mock_provider("#", "rules", { rule = "RULE" }))
+      Completions.register(mock_provider("@", "files", { file = "FILE" }))
+      eq(
+        { { content = "FILE" }, { content = "RULE" } },
+        Completions.parse("@file #rule @file #rule")
+      )
+      eq({}, Completions.parse("name@file"))
+    end
+  )
+
   it("real providers register and resolve through the registry", function()
     local Agents = require("99.extensions.agents")
     local Files = require("99.extensions.files")

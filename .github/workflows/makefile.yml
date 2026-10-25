@@ -8,12 +8,14 @@ on:
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     env:
       NVIM_VERSION: v0.11.5
-      NVIM_TREESITTER_SHA: 2ba5ec184609a96b513bf4c53a20512d64e27f39
       XDG_DATA_HOME: ${{ github.workspace }}/.xdg/data
       XDG_CACHE_HOME: ${{ github.workspace }}/.xdg/cache
 
@@ -21,55 +23,56 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install Neovim
+      shell: bash
       run: |
-        wget -q https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz
-        tar xzf nvim-linux-x86_64.tar.gz
-        sudo mv nvim-linux-x86_64 /opt/nvim
-        sudo ln -s /opt/nvim/bin/nvim /usr/local/bin/nvim
+        case "$RUNNER_OS" in
+          Linux) platform=linux ;;
+          macOS) platform=macos ;;
+        esac
+        case "$(uname -m)" in
+          arm64|aarch64) arch=arm64 ;;
+          x86_64) arch=x86_64 ;;
+        esac
+        curl -fLsS --retry 3 "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-${platform}-${arch}.tar.gz" -o "$RUNNER_TEMP/nvim.tar.gz"
+        mkdir -p "$RUNNER_TEMP/nvim"
+        tar xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$RUNNER_TEMP/nvim" --strip-components=1
+        echo "$RUNNER_TEMP/nvim/bin" >> "$GITHUB_PATH"
 
     - name: Install luarocks
-      run: |
-        sudo apt-get install -y luarocks
+      if: runner.os == 'Linux'
+      run: sudo apt-get install -y luarocks
 
     - name: Install luacheck
+      if: runner.os == 'Linux'
       run: |
-        sudo luarocks install luacheck
+        luarocks install --local luacheck
+        echo "$HOME/.luarocks/bin" >> "$GITHUB_PATH"
 
     - name: Install stylua
+      if: runner.os == 'Linux'
+      shell: bash
       run: |
-        wget -qO- https://github.com/JohnnyMorganz/StyLua/releases/latest/download/stylua-linux-x86_64.zip -O stylua.zip
-        unzip stylua.zip
-        chmod +x stylua
-        sudo mv stylua /usr/local/bin/
-
-    - name: Cache Neovim data (tree-sitter)
-      uses: actions/cache@v4
-      with:
-        path: .xdg
-        key: ${{ runner.os }}-nvim-${{ env.NVIM_VERSION }}-ts-${{ env.NVIM_TREESITTER_SHA }}
-
-    - name: Install tree-sitter CLI
-      run: |
-        node --version
-        npm --version
-        sudo npm install -g tree-sitter-cli
-        tree-sitter --version
+        curl -fLsS --retry 3 "https://github.com/JohnnyMorganz/StyLua/releases/latest/download/stylua-linux-x86_64.zip" -o "$RUNNER_TEMP/stylua.zip"
+        unzip -q "$RUNNER_TEMP/stylua.zip" -d "$RUNNER_TEMP/stylua"
+        chmod +x "$RUNNER_TEMP/stylua/stylua"
+        echo "$RUNNER_TEMP/stylua" >> "$GITHUB_PATH"
 
     - name: Install plenary.nvim
-      run: |
-        git clone https://github.com/nvim-lua/plenary.nvim.git ../plenary.nvim
-
-    - name: Install nvim-treesitter (pinned)
-      run: |
-        git clone https://github.com/nvim-treesitter/nvim-treesitter.git ../nvim-treesitter
-        git -C ../nvim-treesitter checkout ${NVIM_TREESITTER_SHA}
-
-    - name: Install treesitter parsers
-      run: |
-        nvim --headless -u NONE -i NONE \
-          -c "set rtp+=../nvim-treesitter" \
-          -c "lua dofile('scripts/ci/install_treesitter_parsers.lua')" \
-          -c "qa"
+      run: git clone https://github.com/nvim-lua/plenary.nvim.git ../plenary.nvim
 
     - name: Run pr_ready
+      if: runner.os == 'Linux'
       run: make pr_ready
+
+    - name: Run tests on macOS
+      if: runner.os == 'macOS'
+      run: make lua_test docs_smoke
+
+    - uses: actions/setup-node@v4
+      if: runner.os == 'Linux'
+      with:
+        node-version: '22'
+
+    - name: Check generated docs
+      if: runner.os == 'Linux'
+      run: make docs_check

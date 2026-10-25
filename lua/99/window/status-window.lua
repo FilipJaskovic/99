@@ -34,6 +34,8 @@ end
 --- @class _99.StatusWindow
 --- @field opts _99.StatusWindow.Opts
 --- @field state _99.StatusWindow.State
+--- @field generation number
+--- @field timer uv.uv_timer_t?
 --- @field win _99.window.Window | nil
 --- @field throbber _99.Throbber | nil
 --- @field _99 _99.State
@@ -46,6 +48,7 @@ function StatusWindow.new(_99, opts)
   return setmetatable({
     opts = default_opts(opts),
     state = "init",
+    generation = 0,
     _99 = _99,
   }, StatusWindow)
 end
@@ -63,19 +66,19 @@ function StatusWindow:_shutdown_status_window()
   self.throbber = nil
 end
 
-function StatusWindow:_run_loop()
-  if self.state ~= "running" then
-    self:_shutdown_status_window()
+function StatusWindow:_run_loop(generation)
+  if self.state ~= "running" or self.generation ~= generation then
     return
   end
-  vim.defer_fn(function()
-    self:_run_loop()
+  self.timer = vim.defer_fn(function()
+    self:_run_loop(generation)
   end, self.opts.in_flight_interval)
 
   Window.refresh_active_windows()
   local current_win = self.win
   if current_win ~= nil and not Window.is_active_window(current_win) then
     self:_shutdown_status_window()
+    current_win = nil
   end
 
   local active_window = Window.has_active_status_window()
@@ -128,29 +131,26 @@ function StatusWindow:_run_loop()
 end
 
 function StatusWindow:start()
-  if not self.opts.enable then
+  if not self.opts.enable or self.state == "running" then
     return
   end
-
-  assert(
-    self.state == "init",
-    "you cannot start an inflight request if we are not in init state: "
-      .. self.state
-  )
-
   self.state = "running"
-  self:_run_loop()
+  self.generation = self.generation + 1
+  self:_run_loop(self.generation)
 end
 
+-- Stop immediately, including callbacks already queued on Neovim's main loop.
 function StatusWindow:stop()
-  if not self.opts.enable then
-    return
-  end
-  assert(
-    self.state == "running",
-    "you cannot stop a running status window if its not running"
-  )
   self.state = "init"
+  self.generation = self.generation + 1
+  if self.timer then
+    if not self.timer:is_closing() then
+      self.timer:stop()
+      self.timer:close()
+    end
+    self.timer = nil
+  end
+  self:_shutdown_status_window()
 end
 
 return StatusWindow

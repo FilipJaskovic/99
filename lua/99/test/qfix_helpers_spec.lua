@@ -80,4 +80,40 @@ describe("qfix helpers", function()
   it("create_qfix_entries returns empty list for empty response", function()
     eq({}, create_entries(""))
   end)
+
+  it("preserves colon-containing and Windows filenames", function()
+    eq({
+      filename = "/tmp/name:part.lua",
+      lnum = 42,
+      col = 7,
+      text = "note: 2:3,4,example",
+    }, QFixHelpers.parse_line(
+      "/tmp/name:part.lua:42:7,1,note: 2:3,4,example"
+    ))
+    eq(
+      { filename = [[C:\vault\note.md]], lnum = 24, col = 8, text = "hello" },
+      QFixHelpers.parse_line([[C:\vault\note.md:24:8,3,hello]])
+    )
+  end)
+
+  it(
+    "rejects malformed, non-finite, and non-positive coordinates and ranges",
+    function()
+      for _, line in ipairs({
+        "file.lua:oops:3,1,note",
+        "file.lua:1:NaN,1,note",
+        "file.lua:1:inf,1,note",
+        "file.lua:0:3,1,note",
+        "file.lua:1:-3,1,note",
+        "file.lua:1.5:3,1,note",
+        "file.lua:1:3,0,note",
+        "file.lua:1:3,note",
+        "file.lua:1:3,1",
+        ":1:3,1,note",
+        "file.lua:999999999999999999999999:3,1,note",
+      }) do
+        eq(nil, QFixHelpers.parse_line(line), line)
+      end
+    end
+  )
 end)

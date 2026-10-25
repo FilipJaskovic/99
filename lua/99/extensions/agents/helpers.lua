@@ -1,82 +1,133 @@
 local M = {}
+local RULE_BYTES = 100 * 1024
+local PREVIEW_BYTES = 4096
+local MAX_RULES = 5000
 
---- @param path string
---- @return string
-local function normalize_path(path)
-  if path:sub(1, 1) == "/" then
-    return path
-  end
-  if path:sub(1, 1) == "~" then
-    return vim.fn.expand(path)
-  end
-  local cwd = vim.fs.joinpath(vim.uv.cwd(), path)
-  return cwd
+local function contains(root, path)
+  local prefix = root:sub(-1) == "/" and root or root .. "/"
+  return path:sub(1, #prefix) == prefix
 end
 
---- @param dir string
---- @return _99.Agents.Rule[]
-function M.ls(dir)
-  local current_dir = normalize_path(dir)
+local function absolute(path, cwd)
+  if path:sub(1, 1) == "~" then
+    path = vim.fn.expand(path)
+  end
+  return vim.fn.isabsolutepath(path) == 1 and path
+    or vim.fs.joinpath(cwd or vim.fn.getcwd(), path)
+end
+
+--- Discover one level of skills under an explicitly configured directory.
+function M.ls(dir, cwd)
+  cwd = vim.uv.fs_realpath(cwd or vim.fn.getcwd())
+  if not cwd then
+    return {}
+  end
+  local root = vim.uv.fs_realpath(absolute(dir, cwd))
+  local stat = root and vim.uv.fs_stat(root)
+  if not stat or stat.type ~= "directory" then
+    return {}
+  end
   local files = {}
-
-  local direct_skill = vim.fs.joinpath(current_dir, "SKILL.md")
-  if vim.fn.filereadable(direct_skill) == 1 then
-    table.insert(files, direct_skill)
+  local direct = vim.fs.joinpath(root, "SKILL.md")
+  if vim.fn.filereadable(direct) == 1 then
+    table.insert(files, direct)
   else
-    local glob = vim.fs.joinpath(current_dir, "*/SKILL.md")
-    files = vim.fn.glob(glob, false, true)
-  end
-  local rules = {}
-
-  local cwd = vim.uv.cwd()
-  for _, file in ipairs(files) do
-    local filename = vim.fn.fnamemodify(file, ":h:t")
-    local relative_path = file
-    if cwd and file:sub(1, #cwd) == cwd then
-      relative_path = file:sub(#cwd + 2) -- +2 to skip the trailing slash
+    for name, kind in vim.fs.dir(root) do
+      if #files >= MAX_RULES then
+        break
+      end
+      if kind == "directory" or kind == "link" then
+        local file = vim.fs.joinpath(root, name, "SKILL.md")
+        local real = vim.uv.fs_realpath(file)
+        local file_stat = real and vim.uv.fs_stat(real)
+        if
+          real
+          and contains(root, real)
+          and file_stat
+          and file_stat.type == "file"
+        then
+          table.insert(files, file)
+        end
+      end
     end
-    table.insert(rules, {
-      name = filename,
-      path = relative_path,
-      absolute_path = file,
-    })
   end
-
+  table.sort(files)
+  local rules = {}
+  for _, file in ipairs(files) do
+    local real = vim.uv.fs_realpath(file)
+    local file_stat = real and vim.uv.fs_stat(real)
+    if
+      real
+      and contains(root, real)
+      and file_stat
+      and file_stat.type == "file"
+    then
+      table.insert(rules, {
+        name = vim.fs.basename(vim.fs.dirname(file)),
+        path = contains(cwd, file) and file:sub(
+          #cwd + (cwd:sub(-1) == "/" and 1 or 2)
+        ) or file,
+        absolute_path = file,
+        root = root,
+      })
+    end
+  end
   return rules
 end
 
---- @param file string
---- @param count? number
---- @return string
-function M.head(file, count)
-  count = count or 5
-  local fd = vim.uv.fs_open(file, "r", 438)
+local function read_bytes(file, root, limit, truncate)
+  file = absolute(file)
+  root = vim.uv.fs_realpath(root or vim.fs.dirname(file))
+  local real = vim.uv.fs_realpath(file)
+  if not root or not real or not contains(root, real) then
+    return nil
+  end
+  local stat = vim.uv.fs_stat(real)
+  if
+    not stat
+    or stat.type ~= "file"
+    or (not truncate and stat.size > limit)
+  then
+    return nil
+  end
+  local fd = vim.uv.fs_open(real, "r", 438)
   if not fd then
-    return ""
+    return nil
   end
-
-  local stat = vim.uv.fs_fstat(fd)
-  if not stat then
-    vim.uv.fs_close(fd)
-    return ""
+  local opened = vim.uv.fs_fstat(fd)
+  local data
+  if
+    opened
+    and opened.type == "file"
+    and opened.dev == stat.dev
+    and opened.ino == stat.ino
+  then
+    data = vim.uv.fs_read(fd, truncate and limit or limit + 1, 0)
   end
-
-  local data = vim.uv.fs_read(fd, stat.size, 0)
   vim.uv.fs_close(fd)
+  if data and #data <= limit then
+    return data
+  end
+end
 
+--- Full rules have a fixed byte limit independent of file-completion configuration.
+function M.read(file, root)
+  return read_bytes(file, root, RULE_BYTES, false)
+end
+
+--- Preview reads are bounded by bytes as well as line count.
+function M.head(file, count, root)
+  local data = read_bytes(file, root, PREVIEW_BYTES, true)
   if not data then
     return ""
   end
-
   local lines = {}
   for line in data:gmatch("([^\n]*)\n?") do
-    if count == 0 then
+    if #lines >= (count or 5) then
       break
     end
-    count = count - 1
     table.insert(lines, line)
   end
-
   return table.concat(lines, "\n")
 end
 

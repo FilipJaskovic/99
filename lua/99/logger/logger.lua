@@ -1,6 +1,11 @@
 local levels = require("99.logger.level")
 local time = require("99.time")
 local MAX_REQUEST_DEFAULT = 5
+local MAX_BYTES_PER_REQUEST = 256 * 1024
+local TRUNCATED_LOG = vim.json.encode({
+  level = "WARN",
+  msg = "Retained request logs truncated; further entries omitted",
+})
 
 --- @type table<number, _99.Logger.RequestLogs>
 local logger_cache = {}
@@ -108,6 +113,8 @@ end
 --- @class _99.Logger.RequestLogs
 --- @field last_access number
 --- @field logs string[]
+--- @field bytes number
+--- @field truncated boolean
 
 --- @class _99.Logger
 --- @field level number
@@ -233,13 +240,25 @@ function Logger:_cache_log(line)
     cache = {
       last_access = time.now(),
       logs = {},
+      bytes = 0,
+      truncated = false,
     }
     logger_cache[id] = cache
     table.insert(logger_list, id)
     new_cache = true
   end
   cache.last_access = time.now()
-  table.insert(cache.logs, line)
+  -- Reserve space for one valid JSON marker, including when a single entry is huge.
+  if not cache.truncated then
+    if cache.bytes + #line > MAX_BYTES_PER_REQUEST - #TRUNCATED_LOG then
+      table.insert(cache.logs, TRUNCATED_LOG)
+      cache.bytes = cache.bytes + #TRUNCATED_LOG
+      cache.truncated = true
+    else
+      table.insert(cache.logs, line)
+      cache.bytes = cache.bytes + #line
+    end
+  end
   table.sort(logger_list, function(a, b)
     assert(
       logger_cache[a] and logger_cache[b],
@@ -264,6 +283,7 @@ end
 --- of unit tests
 function Logger.reset()
   logger_cache = {}
+  logger_list = {}
   max_requests_in_logger_cache = MAX_REQUEST_DEFAULT
 end
 

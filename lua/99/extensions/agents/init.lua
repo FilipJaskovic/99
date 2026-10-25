@@ -1,4 +1,5 @@
 local helpers = require("99.extensions.agents.helpers")
+local Completions = require("99.extensions.completions")
 local M = {}
 
 --- @class _99.Agents.Rule
@@ -6,6 +7,7 @@ local M = {}
 --- @field name string
 --- @field path string
 --- @field absolute_path string?
+--- @field root string? Configured directory used to confine reads
 
 --- @class _99.Agents.Rules
 --- @field custom _99.Agents.Rule[]
@@ -27,10 +29,10 @@ end
 
 --- @param _99 _99.State
 --- @return _99.Agents.Rules
-function M.rules(_99)
+function M.rules(_99, cwd)
   local custom = {}
   for _, path in ipairs(_99.completion.custom_rules or {}) do
-    local custom_rules = helpers.ls(path)
+    local custom_rules = helpers.ls(path, cwd)
     for _, r in ipairs(custom_rules) do
       table.insert(custom, r)
     end
@@ -63,19 +65,21 @@ function M.get_rule_by_path(rules, path)
       return rule
     end
   end
-  return nil
-end
-
---- @param rules _99.Agents.Rules
---- @param token string
---- @return boolean
-function M.is_rule(rules, token)
+  local match
   for _, rule in ipairs(rules.custom or {}) do
-    if rule.path == token or rule.name == token then
-      return true
+    if rule.name == path then
+      if match then
+        return nil
+      end
+      match = rule
     end
   end
-  return false
+  return match
+end
+
+--- Bare names are accepted only when they identify a single rule.
+function M.is_rule(rules, token)
+  return M.get_rule_by_path(rules, token) ~= nil
 end
 
 --- @param rules _99.Agents.Rules
@@ -112,18 +116,15 @@ end
 
 --- @param rule _99.Agents.Rule
 --- @return string | nil
-function M.get_rule_content(rule)
+function M.get_rule_content(rule, cwd)
   local file_path = rule.absolute_path or rule.path
-  local ok, file = pcall(io.open, file_path, "r")
-  if not ok or not file then
+  if cwd and vim.fn.isabsolutepath(file_path) == 0 then
+    file_path = vim.fs.joinpath(cwd, file_path)
+  end
+  local content = helpers.read(file_path, rule.root)
+  if not content then
     return nil
   end
-  local ok_read, content = pcall(file.read, file, "*a")
-  if not ok_read then
-    return nil
-  end
-
-  pcall(file.close, file)
   return string.format("<%s>\n%s\n</%s>", rule.name, content, rule.name)
 end
 
@@ -137,10 +138,11 @@ function M.completion_provider(_99)
       local agent_rules = M.rules_to_items(_99.rules)
       local items = {}
       for _, rule in ipairs(agent_rules) do
-        local docs = helpers.head(rule.absolute_path or rule.path)
+        local docs =
+          helpers.head(rule.absolute_path or rule.path, nil, rule.root)
         table.insert(items, {
           label = rule.name,
-          insertText = "#" .. rule.path,
+          insertText = Completions.format_reference("#", rule.path),
           filterText = "#" .. rule.name,
           kind = 12, -- LSP CompletionItemKind.Value
           documentation = { kind = "markdown", value = docs },
@@ -149,15 +151,15 @@ function M.completion_provider(_99)
       end
       return items
     end,
-    is_valid = function(token)
-      return M.is_rule(_99.rules, token)
+    is_valid = function(token, _, rules)
+      return M.is_rule(rules or _99.rules, token)
     end,
-    resolve = function(token)
-      local rule = M.get_rule_by_path(_99.rules, token)
+    resolve = function(token, cwd, rules)
+      local rule = M.get_rule_by_path(rules or _99.rules, token)
       if not rule then
         return nil
       end
-      return M.get_rule_content(rule)
+      return M.get_rule_content(rule, cwd)
     end,
   }
 end

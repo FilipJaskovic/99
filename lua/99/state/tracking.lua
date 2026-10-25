@@ -77,7 +77,13 @@ end
 
 function Tracking:stop_all_requests()
   for _, r in pairs(self:active()) do
-    r:stop()
+    local ok, err = pcall(r.stop, r)
+    if not ok then
+      vim.notify(
+        "[99] Request cleanup failed: " .. tostring(err),
+        vim.log.levels.ERROR
+      )
+    end
   end
 end
 

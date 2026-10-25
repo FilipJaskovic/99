@@ -1,101 +1,51 @@
-# 99
-The AI client that Neovim deserves, built by those that still enjoy to code.
+# 99, Filip's fork
 
-## IF YOU ARE HERE FROM [THE YT VIDEO](https://www.youtube.com/watch?v=ws9zR-UzwTE)
-So many things have changed.  So please be careful!
+A personal fork of [ThePrimeagen/99](https://github.com/ThePrimeagen/99) with Codex as the default provider and fixes for request handling, visual edits, and context discovery.
 
-## WARNING :: API CHANGES RIGHT NOW
-It will happen that apis will disapear or be changed.  Sorry, this is an BETA product.
+Requires Neovim 0.11.5 or newer and the Codex CLI. Run `codex login` once, then use the setup below. An existing Codex ChatGPT login works. No separate API key or SDK is required. The integration was developed against Codex CLI 0.164.0.
 
-## Project Direction
-This repo is meant to be my exploration grounds for using AI mixed with tradcoding.
-
-I believe that hand coding is still very important and the best products i know
-of today still do that (see opencode vs claude code)
-
-## Warning
-1. Prompts are temporary right now. they could be massively improved
-2. Officially in beta, but api can still change.  unlikely at this point
+See the [Codex integration decision](docs/codex-integration-research.md) and [audit record](docs/audit/README.md) for evidence and limits. This fork is experimental. Review generated edits before saving or committing them.
 
 ___DOCS___
 
-## Completions
+## Context references
 
-When prompting, you can reference rules and files to add context to your request.
+Use `@` to reference project files and `#` to reference configured rules. Native completion is the default. `cmp` and `blink` are optional alternatives.
 
-- `#` references rules — type `#` in the prompt to autocomplete rule files from your configured rule directories
-- `@` references files — type `@` to fuzzy-search project files
-
-Referenced content is automatically resolved and injected into the AI context. Requires cmp (`source = "cmp"` in your completion config).
+Completion quotes paths that contain spaces, such as `@"My Note.md"`. Set `completion.files.enabled = false` to disable file references. Discovered file references must stay inside their project root after resolving symlinks. This restriction applies to 99's context collection, not to the Codex runtime's own read access.
 
 ## Providers
-99 supports multiple AI CLI backends. Set `provider` in your setup to switch. If you don't set `model`, the provider's default is used.
 
-| Provider | CLI tool | Default model |
-|---|---|---|
-| `OpenCodeProvider` (default) | `opencode` | `opencode/claude-sonnet-4-5` |
+| Provider | CLI | Default model |
+| --- | --- | --- |
+| `CodexProvider` | `codex` | Your Codex configuration |
+| `OpenCodeProvider` | `opencode` | `opencode/claude-sonnet-4-5` |
 | `ClaudeCodeProvider` | `claude` | `claude-sonnet-4-5` |
 | `CursorAgentProvider` | `cursor-agent` | `sonnet-4.5` |
+| `KiroProvider` | `kiro-cli` | `claude-sonnet-4.5` |
 | `GeminiCLIProvider` | `gemini` | `auto` |
 
-```lua
-_99.setup({
-    provider = _99.Providers.ClaudeCodeProvider,
-    -- model is optional, overrides the provider's default
-    model = "claude-sonnet-4-5",
-})
+Set `provider` to choose another backend. Set `model` to override its default. For Codex, `model = "default"` restores the CLI's configured model.
+
+Codex receives the prompt over stdin and writes its final response through `--output-last-message`. This works in ordinary folders, including Obsidian vaults without Git. Each request is ephemeral and has a five-minute deadline. Set `request_timeout` in milliseconds to change the deadline, and `max_response_bytes` to change the 4 MiB response limit.
+
+Visual, search, and tutorial requests use `read-only`. Vibe uses `workspace-write`. Codex runs without interactive approval prompts, so denied actions fail instead of waiting for terminal input. Its configured instructions, MCP servers, and other tools still apply. Read-only does not prevent access to every readable file or disable external tools.
+
+`provider_extra_args` is advanced, trusted configuration. Codex accepts supported configuration flags and explicit sandbox overrides, but rejects arguments that replace its response transport or prompt. A sandbox override changes the permissions described above. Other providers retain their own permission models. Claude, Cursor, and Kiro no longer receive permission-bypass flags automatically.
+
+## Pickers
+
+With Telescope installed, use `require("99.extensions.telescope").select_provider()` or `.select_model()`. With fzf-lua, use `require("99.extensions.fzf_lua")` instead. Provider switching resets the selected model.
+
+## Maintenance
+
+The Git remote `upstream` points to ThePrimeagen/99. Keep upstream updates separate from feature changes so they can be reviewed and tested before adoption.
+
+Run `make pr_ready` for lint, tests, formatting, and the documented setup check. Run `make docs_check` with Node.js 22.6 or newer to verify generated documentation. After changing API comments, regenerate both documentation files:
+
+```sh
+node --experimental-strip-types docs/src/generate.ts
+./gen-docs
 ```
 
-## Extensions
-
-### Telescope Model Selector
-
-If you have [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) installed, you can switch models on the fly via the Telescope picker:
-
-```lua
-vim.keymap.set("n", "<leader>9m", function()
-  require("99.extensions.telescope").select_model()
-end)
-```
-
-The selected model is used for all subsequent requests in the current session.
-
-### Telescope Provider Selector
-
-Switch between providers (OpenCode, Claude, Cursor, Kiro) without restarting Neovim. Switching provider also resets the model to that provider's default.
-
-```lua
-vim.keymap.set("n", "<leader>9p", function()
-  require("99.extensions.telescope").select_provider()
-end)
-```
-
-### fzf-lua
-
-If you use [fzf-lua](https://github.com/ibhagwan/fzf-lua) instead of telescope, the same pickers are available:
-
-```lua
-vim.keymap.set("n", "<leader>9m", function()
-  require("99.extensions.fzf_lua").select_model()
-end)
-
-vim.keymap.set("n", "<leader>9p", function()
-  require("99.extensions.fzf_lua").select_provider()
-end)
-```
-
-## Reporting a bug
-
-To report a bug, please provide the full running debug logs. This may require
-a bit of back and forth.
-
-Please do not request features. We will hold a public discussion on Twitch about
-features, which will be a much better jumping point then a bunch of requests that i have to close down. If you do make a feature request ill just shut it down instantly.
-
-### The logs
-To get the _last_ run's logs execute `:lua require("99").view_logs()`.
-
-### Dont forget
-If there are secrets or other information in the logs you want to be removed make
-sure that you delete the `query` printing. This will likely contain information you may not want to share.
-
+The implementation keeps successful history in the configured `tmp_dir`, which defaults to `./tmp` resolved at setup. Temporary request directories are private and removed on completion or cancellation. History and diagnostic logs can contain prompt text, file contents, and model responses. Review them before sharing. View in-memory request logs with `:lua require("99").view_logs()`.

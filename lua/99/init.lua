@@ -11,7 +11,6 @@ local StatusWindow = require("99.window.status-window")
 local Prompt = require("99.prompt")
 local State = require("99.state")
 local Extensions = require("99.extensions")
-local Agents = require("99.extensions.agents")
 local Providers = require("99.providers")
 
 ---@param path_or_rule string | _99.Agents.Rule
@@ -29,7 +28,7 @@ end
 --- @param opts _99.ops.Opts?
 --- @return _99.ops.Opts
 local function process_opts(opts)
-  opts = opts or {}
+  opts = vim.deepcopy(opts or {})
   for i, rule in ipairs(opts.additional_rules or {}) do
     local r = expand(rule)
     assert(
@@ -43,7 +42,7 @@ end
 
 --- @class _99.Completion
 --- @docs included
---- @field source "cmp" | "blink" | nil
+--- @field source "native" | "cmp" | "blink" | nil
 --- @field custom_rules string[]
 --- @field files _99.Files.Config?
 
@@ -56,132 +55,49 @@ end
 --- @field provider? _99.Providers.BaseProvider
 --- @field provider_extra_args? string[]
 --- @field display_errors? boolean
---- @field auto_add_skills? boolean
 --- @field completion? _99.Completion
 --- @field tmp_dir? string
+--- @field request_timeout? number Request deadline in milliseconds. Default: 300000.
+--- @field max_response_bytes? number Maximum response file size. Default: 4194304.
 
 --- @type _99.State
 local _99_state
+local status_window
 
 --- @alias _99.TraceID number
 
 --- @class _99
---- 99 is an agentic workflow that is meant to meld the current programmers ability
---- with the amazing powers of LLMs.  Instead of being a replacement, its meant to
---- augment the programmer.
+--- This fork uses Codex for visual replacements, project searches, tutorials,
+--- and workspace edits. It requires Neovim 0.11.5 or newer and a signed-in
+--- Codex CLI. The integration was developed against Codex CLI 0.164.0.
 ---
---- As of now, the direction of 99 is to progress into agentic programming and surfacing
---- of information.  In the beginning and the original youtube video was about replacing
---- specific pieces of code.  The more i use 99 the more i realize the better use is
---- through `search` and `work`
----
---- ### Basic Setup
+--- ### Basic setup
 --- ```lua
---- 	{
---- 		"ThePrimeagen/99",
---- 		config = function()
---- 			local _99 = require("99")
----
----             -- For logging that is to a file if you wish to trace through requests
----             -- for reporting bugs, i would not rely on this, but instead the provided
----             -- logging mechanisms within 99.  This is for more debugging purposes
----             local cwd = vim.uv.cwd()
----             local basename = vim.fs.basename(cwd)
---- 			_99.setup({
----                 -- provider = _99.Providers.ClaudeCodeProvider,  -- default: OpenCodeProvider
---- 				logger = {
---- 					level = _99.DEBUG,
---- 					path = "/tmp/" .. basename .. ".99.debug",
---- 					print_on_error = true,
---- 				},
----                 -- When setting this to something that is not inside the CWD tools
----                 -- such as claude code or opencode will have permission issues
----                 -- and generation will fail refer to tool documentation to resolve
----                 -- https://opencode.ai/docs/permissions/#external-directories
----                 -- https://code.claude.com/docs/en/permissions#read-and-edit
----                 tmp_dir = "./tmp",
----
----                 --- Completions: #rules and @files in the prompt buffer
----                 completion = {
----                     -- I am going to disable these until i understand the
----                     -- problem better.  Inside of cursor rules there is also
----                     -- application rules, which means i need to apply these
----                     -- differently
----                     -- cursor_rules = "<custom path to cursor rules>"
----
----                     --- A list of folders where you have your own SKILL.md
----                     --- Expected format:
----                     --- /path/to/dir/<skill_name>/SKILL.md
----                     ---
----                     --- Example:
----                     --- Input Path:
----                     --- "scratch/custom_rules/"
----                     ---
----                     --- Output Rules:
----                     --- {path = "scratch/custom_rules/vim/SKILL.md", name = "vim"},
----                     --- ... the other rules in that dir ...
----                     ---
----                     custom_rules = {
----                       "scratch/custom_rules/",
----                     },
----
----                     --- Configure @file completion (all fields optional, sensible defaults)
----                     files = {
----                         -- enabled = true,
----                         -- max_file_size = 102400,     -- bytes, skip files larger than this
----                         -- max_files = 5000,            -- cap on total discovered files
----                         -- exclude = { ".env", ".env.*", "node_modules", ".git", ... },
----                     },
----
----                     --- What autocomplete you use.
----                     source = "cmp" | "blink",
----                 },
----
----                 --- WARNING: if you change cwd then this is likely broken
----                 --- ill likely fix this in a later change
----                 ---
----                 --- md_files is a list of files to look for and auto add based on the location
----                 --- of the originating request.  That means if you are at /foo/bar/baz.lua
----                 --- the system will automagically look for:
----                 --- /foo/bar/AGENT.md
----                 --- /foo/AGENT.md
----                 --- assuming that /foo is project root (based on cwd)
---- 				md_files = {
---- 					"AGENT.md",
---- 				},
---- 			})
----
----             -- take extra note that i have visual selection only in v mode
----             -- technically whatever your last visual selection is, will be used
----             -- so i have this set to visual mode so i dont screw up and use an
----             -- old visual selection
----             --
----             -- likely ill add a mode check and assert on required visual mode
----             -- so just prepare for it now
---- 			vim.keymap.set("v", "<leader>9v", function()
---- 				_99.visual()
---- 			end)
----
----             --- if you have a request you dont want to make any changes, just cancel it
---- 			vim.keymap.set("n", "<leader>9x", function()
---- 				_99.stop_all_requests()
---- 			end)
----
---- 			vim.keymap.set("n", "<leader>9s", function()
---- 				_99.search()
---- 			end)
---- 		end,
---- 	},
+--- {
+--- 	"FilipJaskovic/99",
+--- 	branch = "codex-and-audit",
+--- 	config = function()
+--- 		local _99 = require("99")
+--- 		_99.setup({
+--- 			provider = _99.Providers.CodexProvider,
+--- 			-- Omit model to use your Codex CLI configuration.
+--- 			completion = { source = "native" },
+--- 			md_files = { "AGENTS.md" },
+--- 		})
+--- 		vim.keymap.set("x", "<leader>9v", _99.visual)
+--- 		vim.keymap.set("n", "<leader>9s", _99.search)
+--- 		vim.keymap.set("n", "<leader>9x", _99.stop_all_requests)
+--- 	end,
+--- }
 --- ```
 ---
 --- ### Usage
---- I would highly recommend trying out `search` as its the direction the library is going
----
---- ```lua
---- _99.search()
---- ```
----
---- See search for more details
+--- Select text and run `visual()` to request a replacement. The replacement
+--- applies only if the source buffer has not changed since capture.
+--- `search()` returns locations in the quickfix list. `tutorial()` opens a
+--- Markdown explanation. `vibe()` lets Codex edit files in the workspace.
+--- Visual, search, and tutorial requests use the read-only Codex sandbox.
+--- Vibe uses workspace-write. Codex also loads its own configuration and tools.
 ---
 --- @docs base
 --- @field setup fun(opts?: _99.Options): nil
@@ -207,7 +123,7 @@ local _99_state
 --- get to see the logs.
 --- @field stop_all_requests fun(): nil
 --- stops all in flight requests.  this means that the underlying process will
---- be killed (OpenCode) and any result will be discared
+--- receive a termination signal, and late results are discarded
 --- @field clear_previous_requests fun(): nil
 --- clears all previous search and visual operations
 --- @field Extensions _99.Extensions
@@ -242,22 +158,18 @@ local function capture_prompt(cb, name, context, opts, capture_content)
         "response",
         response
       )
-      if not ok then
+      if not ok or context._99 ~= _99_state or context:is_cancelled() then
+        context:stop()
         return
-      end
-      local rules_and_names = Agents.by_name(_99_state.rules, response)
-      opts.additional_rules = opts.additional_rules or {}
-      for _, r in ipairs(rules_and_names.rules) do
-        table.insert(opts.additional_rules, r)
       end
       opts.additional_prompt = response
       context.user_prompt = response
       cb(context, opts)
     end,
     on_load = function()
-      Extensions.setup_buffer(_99_state)
+      Extensions.setup_buffer(context._99)
     end,
-    rules = _99_state.rules,
+    rules = context.rules or context._99.rules,
   })
 end
 
@@ -287,12 +199,14 @@ end
 --- @param context _99.Prompt
 function _99.open_tutorial(context)
   local tutorial = context:tutorial_data()
-  Window.create_split(tutorial.tutorial, tutorial.buffer, {
+  local win = Window.create_split(tutorial.tutorial, tutorial.buffer, {
     split_direction = "vertical",
     window_opts = {
       wrap = true,
     },
   })
+  tutorial.buffer = win.buffer
+  tutorial.window = win.win
 end
 
 function _99.open()
@@ -411,6 +325,28 @@ end
 function _99.setup(opts)
   opts = opts or {}
 
+  if opts.tmp_dir then
+    assert(type(opts.tmp_dir) == "string", "opts.tmp_dir must be a string")
+  end
+  if opts.provider_extra_args then
+    assert(
+      type(opts.provider_extra_args) == "table",
+      "provider_extra_args must be a list"
+    )
+    for _, value in ipairs(opts.provider_extra_args) do
+      assert(
+        type(value) == "string",
+        "provider_extra_args must contain strings"
+      )
+    end
+  end
+  if _99_state then
+    _99_state.tracking:stop_all_requests()
+    _99_state:sync()
+  end
+  if status_window then
+    status_window:stop()
+  end
   _99_state = State.new(opts)
 
   local crules = _99_state.completion.custom_rules
@@ -421,8 +357,12 @@ function _99.setup(opts)
   end
 
   vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = vim.api.nvim_create_augroup("99_lifecycle", { clear = true }),
     callback = function()
       _99.stop_all_requests()
+      if status_window then
+        status_window:stop()
+      end
       _99_state:sync()
     end,
   })
@@ -433,17 +373,10 @@ function _99.setup(opts)
     assert(type(opts.model) == "string", "opts.model is not a string")
     _99_state.model = opts.model
   else
-    local provider = opts.provider or Providers.OpenCodeProvider
+    local provider = _99_state.provider_override
     if provider._get_default_model then
       _99_state.model = provider._get_default_model()
     end
-  end
-
-  if opts.provider_extra_args then
-    assert(
-      type(opts.provider_extra_args) == "table",
-      "opts.provider_extra_args must be a table"
-    )
   end
 
   if opts.md_files then
@@ -453,18 +386,13 @@ function _99.setup(opts)
     end
   end
 
-  if opts.tmp_dir then
-    assert(type(opts.tmp_dir) == "string", "opts.tmp_dir must be a string")
-  end
-  _99_state.__tmp_dir = opts.tmp_dir
-
   _99_state.display_errors = opts.display_errors or false
   _99_state:refresh_rules()
   Extensions.init(_99_state)
   Extensions.capture_project_root()
 
-  local sw = StatusWindow.new(_99_state, opts.in_flight_options)
-  sw:start()
+  status_window = StatusWindow.new(_99_state, opts.in_flight_options)
+  status_window:start()
 end
 
 --- @param md string
@@ -500,7 +428,7 @@ end
 
 --- @return _99.Providers.BaseProvider
 function _99.get_provider()
-  return _99_state.provider_override or Providers.OpenCodeProvider
+  return _99_state.provider_override or Providers.CodexProvider
 end
 
 --- @param provider _99.Providers.BaseProvider

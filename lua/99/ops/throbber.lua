@@ -60,6 +60,8 @@ end
 --- @class _99.Throbber
 --- @field start_time number
 --- @field section_time number
+--- @field generation number
+--- @field timer uv.uv_timer_t?
 --- @field state "init" | "throbbing" | "cooldown" | "stopped"
 --- @field throb_fn _99.Throbber.ThrobFN
 --- @field opts _99.Throbber.Opts
@@ -83,6 +85,7 @@ function Throbber.new(cb, opts)
 
   return setmetatable({
     state = "init",
+    generation = 0,
     start_time = 0,
     section_time = 0,
     opts = opts,
@@ -91,11 +94,15 @@ function Throbber.new(cb, opts)
   }, Throbber)
 end
 
-function Throbber:_run()
-  if self.state ~= "throbbing" and self.state ~= "cooldown" then
+function Throbber:_run(generation)
+  if
+    self.generation ~= generation
+    or (self.state ~= "throbbing" and self.state ~= "cooldown")
+  then
     return
   end
 
+  self.timer = nil
   local elapsed = time.now() - self.start_time
   local percent = math.min(1, elapsed / self.section_time)
   local icon = self.throb_fn(self.state == "throbbing" and percent or 1)
@@ -108,20 +115,34 @@ function Throbber:_run()
   end
 
   self.cb(icon)
-  vim.defer_fn(function()
-    self:_run()
-  end, self.opts.tick_time)
+  if self.generation == generation and self.state ~= "stopped" then
+    self.timer = vim.defer_fn(function()
+      self:_run(generation)
+    end, self.opts.tick_time)
+  end
 end
 
 function Throbber:start()
+  if self.state == "throbbing" or self.state == "cooldown" then
+    return
+  end
+  self.generation = self.generation + 1
   self.start_time = time.now()
   self.section_time = self.opts.throb_time
   self.state = "throbbing"
-  self:_run()
+  self:_run(self.generation)
 end
 
 function Throbber:stop()
   self.state = "stopped"
+  self.generation = self.generation + 1
+  if self.timer then
+    if not self.timer:is_closing() then
+      self.timer:stop()
+      self.timer:close()
+    end
+    self.timer = nil
+  end
 end
 
 Throbber._icons = throb_icons

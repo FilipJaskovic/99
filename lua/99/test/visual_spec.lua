@@ -4,7 +4,6 @@ local test_utils = require("99.test.test_utils")
 local eq = assert.are.same
 local Levels = require("99.logger.level")
 local Range = require("99.geo").Range
-local Point = require("99.geo").Point
 local visual_fn = require("99.ops.over-range")
 local Prompt = require("99.prompt")
 
@@ -12,12 +11,12 @@ local Prompt = require("99.prompt")
 --- @param start_row number
 --- @param start_col number
 --- @param end_row number
---- @param end_col number
 --- @return _99.test.Provider, number, _99.Range
-local function setup(content, start_row, start_col, end_row, end_col)
+local function setup(content, start_row, start_col, end_row)
   local p = test_utils.TestProvider.new()
   _99.setup({
     provider = p,
+    tmp_dir = vim.fn.tempname(),
     logger = {
       error_cache_level = Levels.ERROR,
     },
@@ -25,10 +24,14 @@ local function setup(content, start_row, start_col, end_row, end_col)
 
   local buffer = test_utils.create_file(content, "lua", start_row, start_col)
 
-  -- Create a range for the visual selection
-  local start_point = Point:from_1_based(start_row, start_col)
-  local end_point = Point:from_1_based(end_row, end_col)
-  local range = Range:new(buffer, start_point, end_point)
+  local keys = "V"
+    .. (end_row > start_row and tostring(end_row - start_row) .. "j" or "")
+  vim.api.nvim_feedkeys(
+    vim.api.nvim_replace_termcodes(keys .. "<Esc>", true, false, true),
+    "x",
+    false
+  )
+  local range = Range.from_visual_selection()
 
   return p, buffer, range
 end
@@ -47,7 +50,7 @@ local content = {
 
 --- @param context _99.Prompt
 local function visual_call_with_range(context, range)
-  context.data.range = range
+  eq(range, context.data.range)
   visual_fn(context, {
     additional_prompt = "test prompt",
   })
@@ -55,7 +58,7 @@ end
 
 describe("visual", function()
   it("should replace visual selection with AI response", function()
-    local p, buffer, range = setup(content, 2, 1, 2, 23)
+    local p, buffer, range = setup(content, 2, 1, 2)
     local state = _99.__get_state()
     local context = Prompt.visual(state)
 
@@ -85,7 +88,7 @@ describe("visual", function()
       "    -- even more",
       "end",
     }
-    local p, buffer, range = setup(multi_line_content, 2, 1, 4, 17)
+    local p, buffer, range = setup(multi_line_content, 2, 1, 4)
     local state = _99.__get_state()
     local context = Prompt.visual(state)
 
@@ -109,7 +112,7 @@ describe("visual", function()
   end)
 
   it("should cancel request when stop_all_requests is called", function()
-    local p, buffer, range = setup(content, 2, 1, 2, 23)
+    local p, buffer, range = setup(content, 2, 1, 2)
     local state = _99.__get_state()
     local context = Prompt.visual(state)
 
@@ -134,7 +137,7 @@ describe("visual", function()
   end)
 
   it("should handle error cases with graceful failures", function()
-    local p, buffer, range = setup(content, 2, 1, 2, 23)
+    local p, buffer, range = setup(content, 2, 1, 2)
     local state = _99.__get_state()
     local context = Prompt.visual(state)
 
@@ -150,7 +153,7 @@ describe("visual", function()
   end)
 
   it("should handle cancelled status gracefully", function()
-    local p, buffer, range = setup(content, 2, 1, 2, 23)
+    local p, buffer, range = setup(content, 2, 1, 2)
     local state = _99.__get_state()
     local context = require("99.prompt").visual(state)
 

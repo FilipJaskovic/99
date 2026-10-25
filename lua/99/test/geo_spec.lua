@@ -141,14 +141,11 @@ describe("Range", function()
       vim.fn.setpos("'>", { small_buffer, 100, 1, 0 })
       local range = Range.from_visual_selection()
 
-      eq(
-        Range:new(
-          small_buffer,
-          Point:from_1_based(1, 1),
-          Point:from_1_based(2, 9) --- we capture the full line "line two\n"
-        ),
-        range
-      )
+      eq(1, range.start.row)
+      eq(1, range.start.col)
+      eq(2, range.end_.row)
+      eq(9, range.end_.col)
+      eq("line one\nline two", range:to_text())
     end
   )
 
