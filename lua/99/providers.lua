@@ -43,7 +43,7 @@ function BaseProvider._retrieve_response(_, context)
   if vim.trim(text) == "" then
     return false, "provider produced no response"
   end
-  return true, text:gsub("\r\n", "\n"):gsub("\n$", "")
+  return true, text:gsub("\r\n", "\n")
 end
 
 --- Spawn and supervise one CLI. Hooks can supply stdin/env, while the base owns

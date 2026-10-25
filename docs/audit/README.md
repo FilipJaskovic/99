@@ -28,7 +28,7 @@ Root-level fixes also stop old requests and status loops during setup, isolate e
 
 ## Validation
 
-The baseline had 103 passing tests and two failures: obsolete Cursor flags and macOS path canonicalization. Both are resolved. The combined branch passes all 205 tests on macOS with both Neovim 0.11.5 and Neovim 0.13.0-dev. `make pr_ready docs_check` passes with the isolated 0.11.5 release, including lint, formatting, documented-setup evaluation, and both generated README checks. `make lua_test` also passes on the installed 0.13 development build. Logs are `/tmp/99-final-checks.log` and `/tmp/99-installed-final.log`.
+The baseline had 103 passing tests and two failures: obsolete Cursor flags and macOS path canonicalization. Both are resolved. The combined branch passes all 210 tests on macOS with both Neovim 0.11.5 and Neovim 0.13.0-dev. `make pr_ready docs_check` passes with the isolated 0.11.5 release, including lint, formatting, documented-setup evaluation, and both generated README checks. `make lua_test` also passes on the installed 0.13 development build. Logs are `/tmp/99-merge-final-checks.log` and `/tmp/99-merge-installed-tests.log`.
 
 A live Codex CLI 0.164.0 test used a disposable non-Git folder and synthetic text. Visual replacement changed exactly the selected first line, preserved the following line, and did not write the source file on disk. It used the existing ChatGPT login with `--ignore-user-config` to isolate the smoke test from custom tools and instructions. Ordinary plugin use preserves Codex configuration.
 
@@ -43,9 +43,11 @@ Two fresh GPT-6.1 Sol agents reviewed the combined diff after implementation.
 
 Clean macOS CI exposed two existing timing assumptions. The status-window test now waits for window transitions instead of sleeping 20 ms. The throbber test now advances a controlled clock instead of assuming cooldown has started after a wall-clock delay. CI checks on the pull request are the source of truth for its latest commit.
 
+A fresh pre-merge standards review found no blockers. A separate spec review found two P2 defects: response extraction removed a trailing newline from character replacements, and saturated logs hid rejected responses. Both were reproduced and fixed, with five additional regression tests. See the [pre-merge findings and resolutions](final-spec.md#pre-merge-review-and-fixes).
+
 ## Remaining limits
 
-- Visual conflict detection rejects any source-buffer change after capture, including edits outside the selection. Rejected response text is available in bounded request logs. Block selections are unsupported.
+- Visual conflict detection rejects any source-buffer change after capture, including edits outside the selection. The full rejected response is available through `view_logs()` while the request remains in history, even if diagnostic logs are truncated or evicted. CLI response size is bounded by `max_response_bytes`. Block selections are unsupported.
 - Codex's default sandboxes are `read-only` for visual, search, and tutorial requests, and `workspace-write` for vibe. Explicit advanced arguments can override them. Configured MCP servers and external tools have their own permissions.
 - Cancellation supervises the CLI process. It does not guarantee termination of every detached descendant. Cancelling a vibe request does not undo changes it already made.
 - File discovery is synchronous and buffers Git's path output. It refreshes per request, without filesystem watches. Individual reads are bounded, but there is no aggregate byte budget for all explicit file and rule references.

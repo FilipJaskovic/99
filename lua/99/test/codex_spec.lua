@@ -48,7 +48,11 @@ describe("CodexProvider", function()
       "fi",
       'if [ -f "$root/no-output" ]; then exit 0; fi',
       'if [ -f "$root/empty" ]; then : > "$output"; exit 0; fi',
-      'printf "replacement\\nsecond line" > "$output"',
+      'if [ -f "$root/payload" ]; then',
+      '  cat "$root/payload" > "$output"',
+      "else",
+      '  printf "replacement\\nsecond line" > "$output"',
+      "fi",
       'if [ -f "$root/quiet" ]; then exit 0; fi',
       'printf "stdout is not the replacement\\n"',
       'printf "progress\\n" >&2',
@@ -60,6 +64,7 @@ describe("CodexProvider", function()
       provider = Codex,
       tmp_dir = root .. "/results",
       logger = { type = "void" },
+      in_flight_options = { enable = false },
     })
   end)
 
@@ -215,6 +220,39 @@ describe("CodexProvider", function()
     eq("failed", result.status)
     assert.is_truthy(result.response:find("7", 1, true))
     assert.is_truthy(result.response:find("Codex login required", 1, true))
+  end)
+
+  local function replace_visual(keys, payload)
+    vim.fn.writefile(
+      vim.split(payload, "\n", { plain = true }),
+      root .. "/payload",
+      "b"
+    )
+    local buffer = test_utils.create_file({ "first", "tail" })
+    vim.api.nvim_feedkeys(
+      vim.api.nvim_replace_termcodes(keys .. "<Esc>", true, false, true),
+      "x",
+      false
+    )
+    local id = _99.visual({ additional_prompt = "replace selection" })
+    local request = _99.__get_state().tracking.id_to_request[id]
+    assert.is_true(vim.wait(3000, function()
+      return request._completed
+    end))
+    eq("success", request.state)
+    return test_utils.r(buffer)
+  end
+
+  it("preserves every response newline in character replacements", function()
+    eq({ "NEWtail" }, replace_visual("v$", "NEW"))
+    eq({ "NEW", "tail" }, replace_visual("v$", "NEW\n"))
+    eq({ "NEW", "", "tail" }, replace_visual("v$", "NEW\n\n"))
+  end)
+
+  it("normalizes only one line terminator for linewise replacements", function()
+    eq({ "NEW", "tail" }, replace_visual("V", "NEW"))
+    eq({ "NEW", "tail" }, replace_visual("V", "NEW\n"))
+    eq({ "NEW", "", "tail" }, replace_visual("V", "NEW\n\n"))
   end)
 
   it(

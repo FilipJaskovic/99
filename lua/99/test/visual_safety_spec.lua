@@ -1,8 +1,10 @@
--- luacheck: globals describe it assert after_each
+-- luacheck: globals describe it assert before_each after_each
 local test_utils = require("99.test.test_utils")
 local _99 = require("99")
 local Prompt = require("99.prompt")
 local over_range = require("99.ops.over-range")
+local Window = require("99.window")
+local Logger = require("99.logger.logger")
 local eq = assert.are.same
 
 local function select(keys)
@@ -35,7 +37,15 @@ local function resolve(provider, text)
 end
 
 describe("visual edit safety", function()
+  local previous_select, previous_display
+  before_each(function()
+    previous_select = Window.capture_select_input
+    previous_display = Window.display_full_screen_message
+  end)
+
   after_each(function()
+    Window.capture_select_input = previous_select
+    Window.display_full_screen_message = previous_display
     _99.stop_all_requests()
     for _, buffer in ipairs(test_utils.created_files) do
       if vim.api.nvim_buf_is_valid(buffer) then
@@ -174,6 +184,39 @@ describe("visual edit safety", function()
     eq({ "header", "NEWEST", "tail" }, test_utils.r(b))
     eq("failed", first.state)
   end)
+
+  for _, condition in ipairs({ "truncated", "filtered", "evicted" }) do
+    it("shows the rejected response when logs are " .. condition, function()
+      local p, b, c = setup({ "TARGET", "tail" }, "V")
+      c.logger:set_level(condition == "filtered" and _99.FATAL or _99.DEBUG)
+      over_range(c, {
+        additional_prompt = string.rep(
+          "x",
+          condition == "truncated" and 270000 or 1
+        ),
+      })
+      vim.api.nvim_buf_set_lines(b, 0, 1, false, { "USER WORK" })
+      local response = string.rep("RECOVERY_TEXT\n", 200) .. "END"
+      resolve(p, response)
+      eq("failed", c.state)
+      eq({ "USER WORK", "tail" }, test_utils.r(b))
+      if condition == "evicted" then
+        Logger.reset()
+      end
+      local cached = vim.deepcopy(Logger.logs_by_id(c.xid))
+      assert.is_nil(table.concat(cached or {}, "\n"):find(response, 1, true))
+      local displayed
+      Window.capture_select_input = function(_, opts)
+        opts.cb(true, opts.content[1])
+      end
+      Window.display_full_screen_message = function(lines)
+        displayed = lines
+      end
+      _99.view_logs()
+      assert.is_truthy(table.concat(displayed, "\n"):find(response, 1, true))
+      eq(cached, Logger.logs_by_id(c.xid))
+    end)
+  end
 
   it("uses the source buffer after switching to another buffer", function()
     local p, b, c = setup({ "TARGET", "tail" }, "V")

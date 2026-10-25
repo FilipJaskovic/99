@@ -48,4 +48,4 @@ node --experimental-strip-types docs/src/generate.ts
 ./gen-docs
 ```
 
-The implementation keeps successful history in the configured `tmp_dir`, which defaults to `./tmp` resolved at setup. Temporary request directories are private and removed on completion or cancellation. History and diagnostic logs can contain prompt text, file contents, and model responses. Review them before sharing. View in-memory request logs with `:lua require("99").view_logs()`.
+The implementation keeps successful history in the configured `tmp_dir`, which defaults to `./tmp` resolved at setup. Temporary request directories are private and removed on completion or cancellation. History and diagnostic logs can contain prompt text, file contents, and model responses. Review them before sharing. View in-memory request logs with `:lua require("99").view_logs()`. For rejected visual edits, this view also includes the full unapplied response while the request remains in history.

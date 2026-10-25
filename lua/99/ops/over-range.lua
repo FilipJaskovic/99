@@ -109,7 +109,11 @@ local function over_range(context, opts)
           reject(conflict, response)
           return
         end
-        local lines = vim.split(response, "\n", { plain = true })
+        -- Linewise replacement supplies its own line separator. Characterwise
+        -- replacement must preserve every newline in the response.
+        local replacement = new_range.linewise and response:gsub("\n$", "")
+          or response
+        local lines = vim.split(replacement, "\n", { plain = true })
         local ok, apply_error = pcall(new_range.replace_text, new_range, lines)
         if not ok then
           reject(

@@ -286,8 +286,16 @@ function _99.view_logs()
   local str_requests = Tracking.to_selectable_list(requests)
   select_window(str_requests, function(idx)
     local r = requests[idx]
-    local logs = Logger.logs_by_id(r.xid)
-    if logs == nil then
+    local logs = vim.deepcopy(Logger.logs_by_id(r.xid) or {})
+    -- Recovery must survive filtered, truncated, or evicted diagnostic logs.
+    if r.unapplied_response then
+      table.insert(logs, "Unapplied visual response:")
+      vim.list_extend(
+        logs,
+        vim.split(r.unapplied_response, "\n", { plain = true })
+      )
+    end
+    if #logs == 0 then
       logs = { "No logs found for request: " .. r.xid }
     end
     Window.display_full_screen_message(logs)
